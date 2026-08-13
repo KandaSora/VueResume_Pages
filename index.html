@@ -1,1 +1,29 @@
-﻿<!doctype html><html><head><meta charset='utf-8'><title>VueResume placeholder</title></head><body>placeholder — 等待首次部署</body></html>
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <link rel="icon" href="/VueResume_Pages/favicon.ico">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>个人简历</title>
+    <script>
+      // FOUC 防白闪（SITE-03 / D-10）：首帧前设置 data-theme。
+      // 与 src/composables/useTheme.ts 共用 localStorage 键 'vue-resume-theme'：
+      // 脚本只读首帧值，运行时由状态机接管。
+      ;(function () {
+        var t = localStorage.getItem('vue-resume-theme')
+        if (t === 'light' || t === 'dark') {
+          document.documentElement.dataset.theme = t
+          return
+        }
+        var mq = window.matchMedia
+        var dark = mq ? mq('(prefers-color-scheme: dark)').matches : true
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+      })()
+    </script>
+    <script type="module" crossorigin src="/VueResume_Pages/assets/index-DCKZo3eQ.js"></script>
+    <link rel="stylesheet" crossorigin href="/VueResume_Pages/assets/index-DTr8FM1-.css">
+  </head>
+  <body>
+    <div id="app"></div>
+  </body>
+</html>
