@@ -28,8 +28,12 @@
   let last = performance.now()
 
   function resize() {
-    // canvas 独占整个视口（提示行绝对定位不占空间）：等比缩放至完全可见，任何视口都不会裁切
-    const scale = Math.max(0, Math.min(window.innerWidth / 800, window.innerHeight / 480))
+    // 上下左右各留 16px 空位（用户指定），canvas 等比缩放完整显示在留空区域内
+    const GAP = 16
+    const scale = Math.max(
+      0,
+      Math.min((window.innerWidth - GAP * 2) / 800, (window.innerHeight - GAP * 2) / 480),
+    )
     const w = Math.floor(800 * scale)
     const h = Math.floor(480 * scale)
     canvas.style.width = w + 'px'
