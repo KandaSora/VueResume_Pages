@@ -6,8 +6,9 @@
 <title>弹跳小球 Demo</title>
 <style>
   html, body { margin: 0; height: 100%; background: #0d1117; overflow: hidden; }
-  body { display: flex; flex-direction: column; align-items: center; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; color: #e6edf3; }
-  .hint { padding: 10px 16px; font-size: 13px; color: #8b949e; text-align: center; }
+  body { position: relative; display: flex; align-items: center; justify-content: center; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; color: #e6edf3; }
+  /* 提示行绝对定位悬浮（不占布局空间）：canvas 独占整个视口，游戏必然完整显示 */
+  .hint { position: absolute; top: 0; left: 0; right: 0; z-index: 1; padding: 10px 16px; font-size: 13px; color: #8b949e; text-align: center; }
   canvas { display: block; touch-action: none; border: 6px solid #ff4d4f; box-sizing: border-box; }
 </style>
 </head>
@@ -27,11 +28,8 @@
   let last = performance.now()
 
   function resize() {
-    // 动态测量提示行实际高度（可能换行），canvas 缩放铺满剩余空间并保持 800×480 完整显示——
-    // 不做最小宽度限制，任何视口下游戏都完整可见（iframe 内不再下部遮挡）
-    const availW = window.innerWidth
-    const availH = window.innerHeight - hint.offsetHeight
-    const scale = Math.max(0, Math.min(availW / 800, availH / 480))
+    // canvas 独占整个视口（提示行绝对定位不占空间）：等比缩放至完全可见，任何视口都不会裁切
+    const scale = Math.max(0, Math.min(window.innerWidth / 800, window.innerHeight / 480))
     const w = Math.floor(800 * scale)
     const h = Math.floor(480 * scale)
     canvas.style.width = w + 'px'
@@ -39,9 +37,7 @@
     hint.textContent = '占位演示 · 点击屏幕给小球一个向上的力 · 逻辑 800×480 → 显示 ' + w + '×' + h
   }
   window.addEventListener('resize', resize)
-  // 字体加载/提示行换行导致高度变化时重新适配（ResizeObserver 兜底）
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(resize)
-  new ResizeObserver(resize).observe(hint)
   resize()
 
   function kick() {
