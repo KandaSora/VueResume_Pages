@@ -27,13 +27,21 @@
   let last = performance.now()
 
   function resize() {
-    const scale = Math.min(window.innerWidth / 800, (window.innerHeight - 52) / 480)
-    const w = Math.max(320, Math.floor(800 * Math.max(0.4, scale)))
+    // 动态测量提示行实际高度（可能换行），canvas 缩放铺满剩余空间并保持 800×480 完整显示——
+    // 不做最小宽度限制，任何视口下游戏都完整可见（iframe 内不再下部遮挡）
+    const availW = window.innerWidth
+    const availH = window.innerHeight - hint.offsetHeight
+    const scale = Math.max(0, Math.min(availW / 800, availH / 480))
+    const w = Math.floor(800 * scale)
+    const h = Math.floor(480 * scale)
     canvas.style.width = w + 'px'
-    canvas.style.height = Math.floor(w * 0.6) + 'px'
-    hint.textContent = '模拟 WebGL 加载：本页为占位演示 · 点击屏幕给小球一个向上的力 · 逻辑分辨率 800×480 · 当前显示 ' + w + '×' + Math.floor(w * 0.6)
+    canvas.style.height = h + 'px'
+    hint.textContent = '占位演示 · 点击屏幕给小球一个向上的力 · 逻辑 800×480 → 显示 ' + w + '×' + h
   }
   window.addEventListener('resize', resize)
+  // 字体加载/提示行换行导致高度变化时重新适配（ResizeObserver 兜底）
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(resize)
+  new ResizeObserver(resize).observe(hint)
   resize()
 
   function kick() {
