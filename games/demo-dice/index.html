@@ -32,6 +32,10 @@
       var fullscreenButton = document.querySelector("#unity-fullscreen-button");
       var warningBanner = document.querySelector("#unity-warning");
 
+      // 隐藏 Unity 页脚（外嵌场景：弹窗工具条已提供全屏按钮；页脚会撑大容器导致居中偏移裁切顶部）
+      var unityFooter = document.querySelector("#unity-footer");
+      if (unityFooter) unityFooter.style.display = "none";
+
       // Shows a temporary message banner/ribbon for a few seconds, or
       // a permanent error message on top of the canvas if type=='error'.
       // If type=='warning', a yellow highlight color is used.
@@ -106,11 +110,16 @@
       }
 
       // 视口自适应：游戏逻辑分辨率 960×600，等比缩放至完整适配所在窗口（iframe），
-      // 任何视口大小下都完整可见、不裁剪（matchWebGLToCanvasSize 默认 true，引擎自动同步渲染缓冲）
+      // 任何视口大小下都完整可见、不裁剪（matchWebGLToCanvasSize 默认 true，引擎自动同步渲染缓冲）。
+      // 容器尺寸同步为 canvas 尺寸（页脚已隐藏）→ 模板居中定位时无越界偏移。
       function fitCanvas() {
         var scale = Math.max(0, Math.min(window.innerWidth / 960, window.innerHeight / 600));
-        canvas.style.width = Math.floor(960 * scale) + "px";
-        canvas.style.height = Math.floor(600 * scale) + "px";
+        var w = Math.floor(960 * scale);
+        var h = Math.floor(600 * scale);
+        canvas.style.width = w + "px";
+        canvas.style.height = h + "px";
+        container.style.width = w + "px";
+        container.style.height = h + "px";
       }
       window.addEventListener("resize", fitCanvas);
       fitCanvas();
