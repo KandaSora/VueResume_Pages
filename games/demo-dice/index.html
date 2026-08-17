@@ -7,8 +7,9 @@
     <link rel="shortcut icon" href="TemplateData/favicon.ico">
     <link rel="stylesheet" href="TemplateData/style.css">
     <style>
-      /* 站点深色主题兜底：弹窗按游戏宽高比自适应后若仍有极小 letterbox，背景为深色而非白边 */
-      html, body { background: #0d1117 !important; }
+      /* 站点深色主题兜底：弹窗按游戏宽高比自适应后若仍有极小 letterbox，背景为深色而非白边；
+         overflow hidden 消除滚动条引起的容器居中偏移（否则 canvas 左/上边缘被裁 ~7px） */
+      html, body { background: #0d1117 !important; margin: 0; height: 100%; overflow: hidden; }
     </style>
   </head>
   <body>
