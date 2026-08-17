@@ -1,5 +1,6 @@
 {
   "title": "弹跳小球",
   "cover": "cover.svg",
-  "description": "一个简单的 Canvas 小球互动演示，模拟 Unity WebGL 游戏的加载与游玩体验。"
+  "description": "一个简单的 Canvas 小球互动演示，模拟 Unity WebGL 游戏的加载与游玩体验。",
+  "version": 3
 }
