@@ -57,11 +57,11 @@
       }
 
       var buildUrl = "Build";
-      var loaderUrl = buildUrl + "/WebGL.loader.js";
+      var loaderUrl = buildUrl + "/Build.loader.js";
       var config = {
-        dataUrl: buildUrl + "/WebGL.data.gz",
-        frameworkUrl: buildUrl + "/WebGL.framework.js.gz",
-        codeUrl: buildUrl + "/WebGL.wasm.gz",
+        dataUrl: buildUrl + "/Build.data.unityweb",
+        frameworkUrl: buildUrl + "/Build.framework.js.unityweb",
+        codeUrl: buildUrl + "/Build.wasm.unityweb",
         streamingAssetsUrl: "StreamingAssets",
         companyName: "DiceLab",
         productName: "DiceSchemeDemo",
@@ -101,11 +101,19 @@
 
 
       } else {
-        // Desktop style: Render the game canvas in a window that can be maximized to fullscreen:
-
-        canvas.style.width = "960px";
-        canvas.style.height = "600px";
+        // Desktop style: Render the game canvas in a window that can be maximized to fullscreen.
+        // （站点弹窗 iframe 内需完整显示：canvas 尺寸由下方 fitCanvas() 按视口等比缩放，不固定 960×600）
       }
+
+      // 视口自适应：游戏逻辑分辨率 960×600，等比缩放至完整适配所在窗口（iframe），
+      // 任何视口大小下都完整可见、不裁剪（matchWebGLToCanvasSize 默认 true，引擎自动同步渲染缓冲）
+      function fitCanvas() {
+        var scale = Math.max(0, Math.min(window.innerWidth / 960, window.innerHeight / 600));
+        canvas.style.width = Math.floor(960 * scale) + "px";
+        canvas.style.height = Math.floor(600 * scale) + "px";
+      }
+      window.addEventListener("resize", fitCanvas);
+      fitCanvas();
 
       loadingBar.style.display = "block";
 
