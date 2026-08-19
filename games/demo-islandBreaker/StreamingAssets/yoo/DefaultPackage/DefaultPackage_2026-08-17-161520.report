@@ -1,0 +1,447 @@
+{
+    "Summary": {
+        "YooVersion": "3.0.5",
+        "UnityVersion": "2022.3.62f3",
+        "BuildDate": "2026/8/17 16:15:34",
+        "BuildSeconds": 13,
+        "BuildTarget": 20,
+        "BuildPipeline": "ScriptableBuildPipeline",
+        "BuildBundleType": 2,
+        "BuildPackageName": "DefaultPackage",
+        "BuildPackageVersion": "2026-08-17-161520",
+        "BuildPackageNote": "2026/8/17 16:15:20",
+        "UniqueBundleName": false,
+        "EnableAddressable": true,
+        "SupportExtensionless": true,
+        "LocationToLower": false,
+        "IncludeAssetGuid": false,
+        "AutoCollectShaders": true,
+        "IgnoreRuleName": "YooAsset.Editor.NormalIgnoreRule",
+        "ClearBuildCacheFiles": false,
+        "UseAssetDependencyDB": false,
+        "EnableSharePackRule": false,
+        "SingleReferencedPackAlone": true,
+        "EncryptionServicesClassName": "null",
+        "ManifestProcessServicesClassName": "null",
+        "ManifestRestoreServicesClassName": "null",
+        "FileNameStyle": 0,
+        "CompressOption": 2,
+        "DisableWriteTypeTree": false,
+        "IgnoreTypeTreeChanges": false,
+        "ReplaceAssetPathWithAddress": false,
+        "WriteLinkXML": true,
+        "CacheServerHost": "",
+        "CacheServerPort": 0,
+        "BuiltinShadersBundleName": "",
+        "MonoScriptsBundleName": "",
+        "AssetFileTotalCount": 22,
+        "MainAssetTotalCount": 22,
+        "AllBundleTotalCount": 5,
+        "AllBundleTotalSize": 8290218,
+        "EncryptedBundleTotalCount": 0,
+        "EncryptedBundleTotalSize": 0
+    },
+    "AssetInfos": [
+        {
+            "Address": "GameRes/Art/Audio/click",
+            "AssetPath": "Assets/GameRes/Art/Audio/click.wav",
+            "AssetGuid": "df13805f8ffc0fc4784080e422cd33d2",
+            "AssetTags": [],
+            "MainBundleName": "assets_gameres_art_audio.bundle",
+            "MainBundleSize": 4865,
+            "DependAssets": [],
+            "DependBundles": []
+        },
+        {
+            "Address": "GameRes/Art/Fonts/CaiDefaultFont",
+            "AssetPath": "Assets/GameRes/Art/Fonts/CaiDefaultFont.otf",
+            "AssetGuid": "4809b03f28578f64b8c4163240723025",
+            "AssetTags": [],
+            "MainBundleName": "assets_gameres_art_fonts.bundle",
+            "MainBundleSize": 8259915,
+            "DependAssets": [],
+            "DependBundles": []
+        },
+        {
+            "Address": "GameRes/Art/Fonts/CaiDemoNumber",
+            "AssetPath": "Assets/GameRes/Art/Fonts/CaiDemoNumber.ttf",
+            "AssetGuid": "143d7d0d2636bd7468251d1cd1befb2d",
+            "AssetTags": [],
+            "MainBundleName": "assets_gameres_art_fonts.bundle",
+            "MainBundleSize": 8259915,
+            "DependAssets": [],
+            "DependBundles": []
+        },
+        {
+            "Address": "GameRes/Art/Fonts/FONT-LICENSE",
+            "AssetPath": "Assets/GameRes/Art/Fonts/FONT-LICENSE.txt",
+            "AssetGuid": "2d1f7231ec5a85841913c0eeb77d070c",
+            "AssetTags": [],
+            "MainBundleName": "assets_gameres_art_fonts.bundle",
+            "MainBundleSize": 8259915,
+            "DependAssets": [],
+            "DependBundles": []
+        },
+        {
+            "Address": "GameRes/Art/UI/Common/btn_dailyTasks1",
+            "AssetPath": "Assets/GameRes/Art/UI/Common/btn_dailyTasks1.png",
+            "AssetGuid": "f5969929bc54d324395186080ab5e79b",
+            "AssetTags": [],
+            "MainBundleName": "assets_gameres_art_ui_common.bundle",
+            "MainBundleSize": 14487,
+            "DependAssets": [],
+            "DependBundles": []
+        },
+        {
+            "Address": "GameRes/Art/UI/Common/btn_dailyTasks2",
+            "AssetPath": "Assets/GameRes/Art/UI/Common/btn_dailyTasks2.png",
+            "AssetGuid": "e89b9a5c6b9f64448a2aa854e1306812",
+            "AssetTags": [],
+            "MainBundleName": "assets_gameres_art_ui_common.bundle",
+            "MainBundleSize": 14487,
+            "DependAssets": [],
+            "DependBundles": []
+        },
+        {
+            "Address": "GameRes/Art/UI/Common/btn_green",
+            "AssetPath": "Assets/GameRes/Art/UI/Common/btn_green.png",
+            "AssetGuid": "fa9f7ca485d036849a81f119b7af45ff",
+            "AssetTags": [],
+            "MainBundleName": "assets_gameres_art_ui_common.bundle",
+            "MainBundleSize": 14487,
+            "DependAssets": [],
+            "DependBundles": []
+        },
+        {
+            "Address": "GameRes/Art/UI/Common/btn_home1",
+            "AssetPath": "Assets/GameRes/Art/UI/Common/btn_home1.png",
+            "AssetGuid": "8d512b4e69579a446a66443182e68f0f",
+            "AssetTags": [],
+            "MainBundleName": "assets_gameres_art_ui_common.bundle",
+            "MainBundleSize": 14487,
+            "DependAssets": [],
+            "DependBundles": []
+        },
+        {
+            "Address": "GameRes/Art/UI/Common/btn_home2",
+            "AssetPath": "Assets/GameRes/Art/UI/Common/btn_home2.png",
+            "AssetGuid": "9a6782ed6b1c3114dad1d11b09eac90e",
+            "AssetTags": [],
+            "MainBundleName": "assets_gameres_art_ui_common.bundle",
+            "MainBundleSize": 14487,
+            "DependAssets": [],
+            "DependBundles": []
+        },
+        {
+            "Address": "GameRes/Art/UI/Common/btn_store1",
+            "AssetPath": "Assets/GameRes/Art/UI/Common/btn_store1.png",
+            "AssetGuid": "09c625b1e4c55024c9f2907ff6331f8d",
+            "AssetTags": [],
+            "MainBundleName": "assets_gameres_art_ui_common.bundle",
+            "MainBundleSize": 14487,
+            "DependAssets": [],
+            "DependBundles": []
+        },
+        {
+            "Address": "GameRes/Art/UI/Common/btn_store2",
+            "AssetPath": "Assets/GameRes/Art/UI/Common/btn_store2.png",
+            "AssetGuid": "019e5645447cf664cb6f98d33ec729a5",
+            "AssetTags": [],
+            "MainBundleName": "assets_gameres_art_ui_common.bundle",
+            "MainBundleSize": 14487,
+            "DependAssets": [],
+            "DependBundles": []
+        },
+        {
+            "Address": "GameRes/Art/UI/Common/left",
+            "AssetPath": "Assets/GameRes/Art/UI/Common/left.png",
+            "AssetGuid": "0b3a0ea64dae14c4f9e55255073b7b6f",
+            "AssetTags": [],
+            "MainBundleName": "assets_gameres_art_ui_common.bundle",
+            "MainBundleSize": 14487,
+            "DependAssets": [],
+            "DependBundles": []
+        },
+        {
+            "Address": "GameRes/Art/UI/Common/right",
+            "AssetPath": "Assets/GameRes/Art/UI/Common/right.png",
+            "AssetGuid": "8d28135ec3f39264a80f56f8adf570cd",
+            "AssetTags": [],
+            "MainBundleName": "assets_gameres_art_ui_common.bundle",
+            "MainBundleSize": 14487,
+            "DependAssets": [],
+            "DependBundles": []
+        },
+        {
+            "Address": "GameRes/Config/tbball",
+            "AssetPath": "Assets/GameRes/Config/tbball.bytes",
+            "AssetGuid": "a266685231216eb4489e2f4aeb5181d2",
+            "AssetTags": [],
+            "MainBundleName": "assets_gameres_config.bundle",
+            "MainBundleSize": 1793,
+            "DependAssets": [],
+            "DependBundles": []
+        },
+        {
+            "Address": "GameRes/Config/tbbrick",
+            "AssetPath": "Assets/GameRes/Config/tbbrick.bytes",
+            "AssetGuid": "fa446b344d5a2434e8a4024f7b233b50",
+            "AssetTags": [],
+            "MainBundleName": "assets_gameres_config.bundle",
+            "MainBundleSize": 1793,
+            "DependAssets": [],
+            "DependBundles": []
+        },
+        {
+            "Address": "GameRes/Config/tbbricklayout",
+            "AssetPath": "Assets/GameRes/Config/tbbricklayout.bytes",
+            "AssetGuid": "76d67c574bf3be046904655356bc943b",
+            "AssetTags": [],
+            "MainBundleName": "assets_gameres_config.bundle",
+            "MainBundleSize": 1793,
+            "DependAssets": [],
+            "DependBundles": []
+        },
+        {
+            "Address": "GameRes/Config/tbitem",
+            "AssetPath": "Assets/GameRes/Config/tbitem.bytes",
+            "AssetGuid": "91153017305f190409092ca500985654",
+            "AssetTags": [],
+            "MainBundleName": "assets_gameres_config.bundle",
+            "MainBundleSize": 1793,
+            "DependAssets": [],
+            "DependBundles": []
+        },
+        {
+            "Address": "GameRes/Config/tblevel",
+            "AssetPath": "Assets/GameRes/Config/tblevel.bytes",
+            "AssetGuid": "9fb45b8cca8118e4bb76c0a92c4b67ee",
+            "AssetTags": [],
+            "MainBundleName": "assets_gameres_config.bundle",
+            "MainBundleSize": 1793,
+            "DependAssets": [],
+            "DependBundles": []
+        },
+        {
+            "Address": "GameRes/Config/tbwave",
+            "AssetPath": "Assets/GameRes/Config/tbwave.bytes",
+            "AssetGuid": "a2186bebea4be5a49af738fc78a96d77",
+            "AssetTags": [],
+            "MainBundleName": "assets_gameres_config.bundle",
+            "MainBundleSize": 1793,
+            "DependAssets": [],
+            "DependBundles": []
+        },
+        {
+            "Address": "GameRes/Prefabs/UI/ConfigErrorBanner",
+            "AssetPath": "Assets/GameRes/Prefabs/UI/ConfigErrorBanner.prefab",
+            "AssetGuid": "b080ffe46a64de34aa71cfbfd1840041",
+            "AssetTags": [],
+            "MainBundleName": "assets_gameres_prefabs_ui.bundle",
+            "MainBundleSize": 9158,
+            "DependAssets": [
+                {
+                    "AssetPath": "Assets/GameRes/Art/Fonts/CaiDefaultFont.otf",
+                    "AssetGUID": "4809b03f28578f64b8c4163240723025"
+                }
+            ],
+            "DependBundles": [
+                "assets_gameres_art_fonts.bundle"
+            ]
+        },
+        {
+            "Address": "GameRes/Prefabs/UI/ResultWindow",
+            "AssetPath": "Assets/GameRes/Prefabs/UI/ResultWindow.prefab",
+            "AssetGuid": "72fc2b8bb5a79914db5f46e606c84a94",
+            "AssetTags": [],
+            "MainBundleName": "assets_gameres_prefabs_ui.bundle",
+            "MainBundleSize": 9158,
+            "DependAssets": [
+                {
+                    "AssetPath": "Assets/GameRes/Art/Fonts/CaiDefaultFont.otf",
+                    "AssetGUID": "4809b03f28578f64b8c4163240723025"
+                }
+            ],
+            "DependBundles": [
+                "assets_gameres_art_fonts.bundle"
+            ]
+        },
+        {
+            "Address": "GameRes/Prefabs/UI/TopBar",
+            "AssetPath": "Assets/GameRes/Prefabs/UI/TopBar.prefab",
+            "AssetGuid": "254862d5edc98ea46a6519a60f800167",
+            "AssetTags": [],
+            "MainBundleName": "assets_gameres_prefabs_ui.bundle",
+            "MainBundleSize": 9158,
+            "DependAssets": [
+                {
+                    "AssetPath": "Assets/GameRes/Art/Fonts/CaiDefaultFont.otf",
+                    "AssetGUID": "4809b03f28578f64b8c4163240723025"
+                }
+            ],
+            "DependBundles": [
+                "assets_gameres_art_fonts.bundle"
+            ]
+        }
+    ],
+    "BundleInfos": [
+        {
+            "BundleName": "assets_gameres_art_audio.bundle",
+            "FileName": "56c93f8c8b0ce60dbd76478cbbfd1047.bundle",
+            "FileHash": "56c93f8c8b0ce60dbd76478cbbfd1047",
+            "FileCrc": 2202270257,
+            "FileSize": 4865,
+            "Encrypted": false,
+            "Tags": [],
+            "DependBundles": [],
+            "ReferenceBundles": [],
+            "BundleContents": [
+                {
+                    "AssetPath": "Assets/GameRes/Art/Audio/click.wav",
+                    "AssetGUID": "df13805f8ffc0fc4784080e422cd33d2"
+                }
+            ]
+        },
+        {
+            "BundleName": "assets_gameres_art_fonts.bundle",
+            "FileName": "11df43dd18777dffb5ae09a55eab5c32.bundle",
+            "FileHash": "11df43dd18777dffb5ae09a55eab5c32",
+            "FileCrc": 848209350,
+            "FileSize": 8259915,
+            "Encrypted": false,
+            "Tags": [],
+            "DependBundles": [],
+            "ReferenceBundles": [
+                "assets_gameres_prefabs_ui.bundle"
+            ],
+            "BundleContents": [
+                {
+                    "AssetPath": "Assets/GameRes/Art/Fonts/CaiDefaultFont.otf",
+                    "AssetGUID": "4809b03f28578f64b8c4163240723025"
+                },
+                {
+                    "AssetPath": "Assets/GameRes/Art/Fonts/CaiDemoNumber.ttf",
+                    "AssetGUID": "143d7d0d2636bd7468251d1cd1befb2d"
+                },
+                {
+                    "AssetPath": "Assets/GameRes/Art/Fonts/FONT-LICENSE.txt",
+                    "AssetGUID": "2d1f7231ec5a85841913c0eeb77d070c"
+                }
+            ]
+        },
+        {
+            "BundleName": "assets_gameres_art_ui_common.bundle",
+            "FileName": "5c90322b59ae2056e35c840da65123cb.bundle",
+            "FileHash": "5c90322b59ae2056e35c840da65123cb",
+            "FileCrc": 4033620497,
+            "FileSize": 14487,
+            "Encrypted": false,
+            "Tags": [],
+            "DependBundles": [],
+            "ReferenceBundles": [],
+            "BundleContents": [
+                {
+                    "AssetPath": "Assets/GameRes/Art/UI/Common/btn_dailyTasks1.png",
+                    "AssetGUID": "f5969929bc54d324395186080ab5e79b"
+                },
+                {
+                    "AssetPath": "Assets/GameRes/Art/UI/Common/btn_dailyTasks2.png",
+                    "AssetGUID": "e89b9a5c6b9f64448a2aa854e1306812"
+                },
+                {
+                    "AssetPath": "Assets/GameRes/Art/UI/Common/btn_green.png",
+                    "AssetGUID": "fa9f7ca485d036849a81f119b7af45ff"
+                },
+                {
+                    "AssetPath": "Assets/GameRes/Art/UI/Common/btn_home1.png",
+                    "AssetGUID": "8d512b4e69579a446a66443182e68f0f"
+                },
+                {
+                    "AssetPath": "Assets/GameRes/Art/UI/Common/btn_home2.png",
+                    "AssetGUID": "9a6782ed6b1c3114dad1d11b09eac90e"
+                },
+                {
+                    "AssetPath": "Assets/GameRes/Art/UI/Common/btn_store1.png",
+                    "AssetGUID": "09c625b1e4c55024c9f2907ff6331f8d"
+                },
+                {
+                    "AssetPath": "Assets/GameRes/Art/UI/Common/btn_store2.png",
+                    "AssetGUID": "019e5645447cf664cb6f98d33ec729a5"
+                },
+                {
+                    "AssetPath": "Assets/GameRes/Art/UI/Common/left.png",
+                    "AssetGUID": "0b3a0ea64dae14c4f9e55255073b7b6f"
+                },
+                {
+                    "AssetPath": "Assets/GameRes/Art/UI/Common/right.png",
+                    "AssetGUID": "8d28135ec3f39264a80f56f8adf570cd"
+                }
+            ]
+        },
+        {
+            "BundleName": "assets_gameres_config.bundle",
+            "FileName": "0cf1c1f7d78d4b5d8297b34d286f340a.bundle",
+            "FileHash": "0cf1c1f7d78d4b5d8297b34d286f340a",
+            "FileCrc": 1342109278,
+            "FileSize": 1793,
+            "Encrypted": false,
+            "Tags": [],
+            "DependBundles": [],
+            "ReferenceBundles": [],
+            "BundleContents": [
+                {
+                    "AssetPath": "Assets/GameRes/Config/tbball.bytes",
+                    "AssetGUID": "a266685231216eb4489e2f4aeb5181d2"
+                },
+                {
+                    "AssetPath": "Assets/GameRes/Config/tbbrick.bytes",
+                    "AssetGUID": "fa446b344d5a2434e8a4024f7b233b50"
+                },
+                {
+                    "AssetPath": "Assets/GameRes/Config/tbbricklayout.bytes",
+                    "AssetGUID": "76d67c574bf3be046904655356bc943b"
+                },
+                {
+                    "AssetPath": "Assets/GameRes/Config/tbitem.bytes",
+                    "AssetGUID": "91153017305f190409092ca500985654"
+                },
+                {
+                    "AssetPath": "Assets/GameRes/Config/tblevel.bytes",
+                    "AssetGUID": "9fb45b8cca8118e4bb76c0a92c4b67ee"
+                },
+                {
+                    "AssetPath": "Assets/GameRes/Config/tbwave.bytes",
+                    "AssetGUID": "a2186bebea4be5a49af738fc78a96d77"
+                }
+            ]
+        },
+        {
+            "BundleName": "assets_gameres_prefabs_ui.bundle",
+            "FileName": "4564274ccf098c7757e0255a2a245178.bundle",
+            "FileHash": "4564274ccf098c7757e0255a2a245178",
+            "FileCrc": 4199211829,
+            "FileSize": 9158,
+            "Encrypted": false,
+            "Tags": [],
+            "DependBundles": [
+                "assets_gameres_art_fonts.bundle"
+            ],
+            "ReferenceBundles": [],
+            "BundleContents": [
+                {
+                    "AssetPath": "Assets/GameRes/Prefabs/UI/ConfigErrorBanner.prefab",
+                    "AssetGUID": "b080ffe46a64de34aa71cfbfd1840041"
+                },
+                {
+                    "AssetPath": "Assets/GameRes/Prefabs/UI/ResultWindow.prefab",
+                    "AssetGUID": "72fc2b8bb5a79914db5f46e606c84a94"
+                },
+                {
+                    "AssetPath": "Assets/GameRes/Prefabs/UI/TopBar.prefab",
+                    "AssetGUID": "254862d5edc98ea46a6519a60f800167"
+                }
+            ]
+        }
+    ],
+    "IndependentAssets": []
+}

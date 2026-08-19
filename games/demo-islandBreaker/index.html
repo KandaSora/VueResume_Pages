@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no">
+    <title>ISLAND BREAKER | UnityProject</title>
+    <style>
+      /* ISLAND BREAKER fit-inside 模板（03-03 冒烟，D-07 最小版）：
+         canvas 恒 9:16 等比缩放居中——宽窗上下黑边、窄窗左右黑边，不拉伸不裁剪。
+         触摸防干扰 CSS（05-02，LOOP-01 触摸语义基础；真机验证在 Phase 9）：
+         禁页面滚动/双指缩放（touch-action）、禁长按放大镜/上下文菜单（user-select/touch-callout）。
+         只改 CSS 与注释；Unity 注入宏与 JS 逐字保留（删一行构建就起不来）。
+         完整像素黑边管线（Pixel Perfect Camera Crop Frame + UI 通道 min 缩放）在 Phase 5。 */
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background: #000;
+        touch-action: none;
+        overscroll-behavior: none;
+      }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      }
+      #unity-canvas {
+        width: min(100vw, calc(100vh * 9 / 16));
+        height: min(100vh, calc(100vw * 16 / 9));
+        background: #1F1F20;
+        touch-action: none;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="unity-canvas" width=1080 height=1920 tabindex="-1"></canvas>
+    <script src="Build/release-20260818-184037.loader.js"></script>
+    <script>
+      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+        // Mobile device style: fill the whole browser client area with the game canvas:
+        var meta = document.createElement('meta');
+        meta.name = 'viewport';
+        meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes';
+        document.getElementsByTagName('head')[0].appendChild(meta);
+
+        var canvas = document.querySelector("#unity-canvas");
+        canvas.style.width = "100%";
+        canvas.style.height = "100%";
+        canvas.style.position = "fixed";
+
+        document.body.style.textAlign = "left";
+      }
+
+      createUnityInstance(document.querySelector("#unity-canvas"), {
+        dataUrl: "Build/release-20260818-184037.data.unityweb",
+        frameworkUrl: "Build/release-20260818-184037.framework.js.unityweb",
+        codeUrl: "Build/release-20260818-184037.wasm.unityweb",
+        streamingAssetsUrl: "StreamingAssets",
+        companyName: "DefaultCompany",
+        productName: "UnityProject",
+        productVersion: "1.0.1",
+        // matchWebGLToCanvasSize: false, // Uncomment this to separately control WebGL canvas render size and DOM element size.
+        // devicePixelRatio: 1, // Uncomment this to override low DPI rendering on high DPI displays.
+      });
+    </script>
+  </body>
+</html>
