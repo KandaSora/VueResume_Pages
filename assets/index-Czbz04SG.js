@@ -231,7 +231,657 @@ Android 配置（首次自动执行一次）：\`scriptingBackend=IL2CPP\`、\`t
 1. **ray march 步数按设备降级**：低端 Android 若仍吃力，可降到 8~12 步或缩小 RawImage 尺寸。
 2. **盲掷的可读性**：若仍需完全不可读，可提高初角速度（当前 ±1500°/s）；若要停止更突兀，缩短 \`slamTime\`（当前 60~100ms）。
 3. **切换点数中途调用 \`RollTo\`**：会重新锁定目标并重启协程，属预期行为。
-4. **无 git 仓库**：本项目未初始化 git，改动直接落盘。`});function Zl(e){let t=e.split(/\r?\n/);if(t[0]?.trim()!==`---`)return{data:{},content:e};let n=t.findIndex((e,t)=>t>0&&e.trim()===`---`);if(n===-1)return{data:{},content:e};let r={};for(let e of t.slice(1,n)){let t=e.indexOf(`:`);if(t===-1)continue;let n=e.slice(0,t).trim(),i=e.slice(t+1).trim().replace(/^(['"])(.*)\1$/,`$2`);n&&(r[n]=i)}return{data:r,content:t.slice(n+1).join(`
+4. **无 git 仓库**：本项目未初始化 git，改动直接落盘。`,"../content/articles/Yooasset加载流程.md":`---
+title: YooAsset 加载 AssetBundle 的流程
+date: 2026-08-31
+summary: 以本地资源加载为例，梳理 YooAsset 从初始化到资源可用的完整流程
+---
+
+### YooAsset 加载 AssetBundle 的流程
+
+YooAsset 是一套用于 Unity 的 AssetBundle 管理框架，它将 AssetBundle 的构建、分发、加载、卸载等环节进行了系统化封装。下面以 **本地资源加载** 为例，说明从发起加载请求到资源可用的典型流程：
+
+1. **初始化**
+
+   - 调用 \`YooAssets.Initialize()\` 初始化资源系统，指定运行模式（如 \`OfflinePlayMode\`、\`HostPlayMode\` 等）。
+   - 初始化时会加载资源清单（Manifest），清单中记录了所有 AssetBundle 的版本、依赖关系、哈希值、文件大小等信息。
+2. **定位资源**
+
+   - 业务层通过 \`YooAssets.LoadAssetAsync<GameObject>("Assets/Prefabs/Player")\` 发起加载请求。
+   - YooAsset 根据资源路径在清单中查找该资源所属的 AssetBundle（可能同时存在多个 AssetBundle 包含此资源，框架会按规则选择）。
+3. **解析依赖**
+
+   - 从清单中获取该 AssetBundle 的所有依赖项（例如 Shader、贴图、材质等可能被单独打包）。
+   - YooAsset 会先确保所有依赖 AssetBundle 已经加载到内存，若未加载则先加载依赖。
+4. **加载 AssetBundle 文件**
+
+   - 若目标 AssetBundle 尚未加载，YooAsset 会从本地缓存或远端下载该文件。
+   - 文件加载到内存后，根据 AssetBundle 的压缩格式（LZ4 / LZMA / 不压缩）进行解压或直接映射。
+   - 调用 Unity 的 \`AssetBundle.LoadFromFileAsync\` 或 \`LoadFromMemoryAsync\` 加载 AssetBundle 对象。
+5. **从 AssetBundle 中加载资源**
+
+   - 通过 \`AssetBundle.LoadAssetAsync\` 异步加载具体资源。
+   - 资源加载完成后，YooAsset 会进行引用计数管理，防止资源被错误卸载。
+6. **资源卸载**
+
+   - 当业务层不再使用资源时，调用 \`YooAssets.UnloadUnusedAssets()\` 或直接释放句柄。
+   - YooAsset 根据引用计数和依赖关系，自动卸载不再被引用的 AssetBundle，释放内存。
+
+**关键点**：YooAsset 实现了完整的依赖管理、引用计数、缓存系统和异步加载队列，使 AssetBundle 的使用更加安全和高效。
+
+---
+
+### 为什么选用 LZ4 或 LZMA 压缩格式
+
+Unity 在构建 AssetBundle 时支持三种压缩选项：
+
+- **不压缩**（Uncompressed）
+- **LZMA**（默认）
+- **LZ4**
+
+其中 **LZMA** 和 **LZ4** 是使用最广泛的两种，选择它们通常基于以下考量：
+
+#### 1. LZMA（高压缩率，整包解压）
+
+- **特点**：压缩率高，打包后的文件体积最小，但解压时必须将整个 AssetBundle 解压到内存中才能使用，且解压速度相对较慢。
+- **适用场景**：
+  - 对包体大小敏感（尤其是首包下载量），希望尽可能减小客户端体积。
+  - 资源不经常被加载，或加载后长期驻留内存（如一次性加载的 UI 界面、剧情资源）。
+  - 不需要频繁、快速加载的资源。
+
+#### 2. LZ4（低压缩率，流式加载）
+
+- **特点**：压缩率略低于 LZMA，但解压速度极快，且支持 **流式加载**（Chunk-based loading）。Unity 的 \`LoadFromFileAsync\` 可以按需从磁盘读取并解压所需的数据块，无需将整个 AssetBundle 解压到内存中。
+- **适用场景**：
+  - 需要快速响应、频繁加载的资源（如角色模型、技能特效、UI 图标）。
+  - 内存敏感的场景，避免因整包解压造成的内存峰值。
+  - 大型开放世界游戏，需要按区域动态加载资源。
+
+---
+
+### LZ4 与 LZMA 优劣对比
+
+| 对比维度                  | LZ4                                        | LZMA                                      |
+| ------------------------- | ------------------------------------------ | ----------------------------------------- |
+| **压缩率**          | 较低（约为原始大小的 50%~70%）             | 较高（约为原始大小的 30%~50%）            |
+| **解压速度**        | 极快（接近不压缩的读取速度）               | 较慢（整包解压，耗时明显）                |
+| **内存占用**        | 支持流式加载，内存峰值低，无需整包解压     | 必须整包解压到内存，产生较大内存峰值      |
+| **加载方式**        | 推荐\`AssetBundle.LoadFromFile\`，按需读取 | 通常使用\`LoadFromMemory\` 或先解压到内存 |
+| **适合场景**        | 频繁加载、热更新频繁、内存敏感             | 冷启动资源、一次性加载、包体敏感          |
+| **构建时间**        | 较短                                       | 较长（压缩算法更复杂）                    |
+| **运行时 CPU 开销** | 极低                                       | 较高（解压时消耗 CPU）                    |
+
+---
+
+### 在 YooAsset 中的实践建议
+
+YooAsset 允许在构建 AssetBundle 时为不同资源设置不同的压缩格式，因此可以混合使用：
+
+- **首包资源**（如启动场景、核心 UI）：建议使用 **LZ4**，保证快速进入游戏，同时兼顾包体大小。
+- **非首包的热更资源**：若下载流量不是主要矛盾，推荐 **LZ4** 以提升加载体验；若希望减小热更包体积，可选择 **LZMA**，但需注意解压时的内存峰值。
+- **大型资源**（如视频、音频、超大纹理）：由于这些资源本身就很大，压缩率提升有限，且解压开销大，可考虑 **不压缩** 或 **LZ4**。
+- **频繁动态加载的资源**：一律使用 **LZ4**，避免解压卡顿和内存浪费。
+
+总结：选择 LZ4 或 LZMA 本质是在 **包体大小**、**加载速度**、**内存占用** 三者间做权衡。YooAsset 的灵活性允许开发者按资源类型制定策略，达到整体最优。
+`,"../content/articles/Yooasset打包规则.md":`---
+title: YooAsset Collector 打包规则（Pack Rule）详解
+date: 2026-08-31
+summary: YooAsset Collector 打包规则（Pack Rule）各选项的作用与选择
+---
+
+# YooAsset Collector 打包规则（Pack Rule）详解
+
+在 YooAsset 的 **Collector（收集器）** 配置中，除了收集模式（Main/Static/Depend）和寻址规则（Address Rule）之外，还有一个重要设置：**打包规则（Pack Rule）**。
+它决定了收集到的资源如何被分配进具体的 AssetBundle 文件，即“资源如何打包”的问题。
+
+常见的打包规则选项包括：
+
+- **PackTogether**：所有资源打包成一个 Bundle。
+- **PackSeparately**：每个资源单独打包成 Bundle。
+- **PackDirectory**：按目录打包，同一目录下的所有资源打成一个 Bundle。
+- **PackTopDirectory**：按顶层目录打包，顶层目录下的所有资源打成一个 Bundle。
+- **PackCollector**：按收集器打包，同一个收集器收集到的资源打成一个 Bundle。
+- **PackGroup**：按分组打包，同一个 Group 下的资源打成一个 Bundle。
+- **PackRawFile**：作为原生文件处理，不打包成 AssetBundle（一般用于特殊文件，如视频、音频原始文件等）。
+
+下面重点解释与“目录”相关的两个选项，并对比其他常见选项的优缺点。
+
+---
+
+## 1. PackTogether（全部打包成一个 Bundle）
+
+### 行为
+
+- 将所有收集到的资源（无论路径）全部打包进一个 AssetBundle。
+
+### 优点
+
+- **简单**：只有一个 Bundle，管理方便。
+- **依赖完整**：所有资源都在同一个包内，不存在依赖丢失问题。
+- 加载时只需加载一个 Bundle。
+
+### 缺点
+
+- **包体巨大**：所有资源都在一个包里，首次加载会非常慢，内存占用高。
+- **热更粒度极差**：更新任何一个资源都需要重新下载整个 Bundle。
+- 不适合大多数项目，只适合非常小的项目或特定场景（如单个场景的所有资源）。
+
+---
+
+## 2. PackSeparately（每个资源单独打包）
+
+### 行为
+
+- 每个资源文件都单独打成一个 AssetBundle。
+
+### 优点
+
+- **热更粒度最细**：更新单个资源只需下载对应的一个 Bundle。
+- **按需加载**：只加载需要的 Bundle，内存占用可控。
+- 资源复用方便。
+
+### 缺点
+
+- **Bundle 数量极多**：可能导致项目中存在成千上万个 Bundle 文件。
+- **加载性能下降**：大量小文件会增加 IO 和加载开销，尤其是移动平台。
+- **依赖关系复杂**：需要正确配置依赖收集器，否则容易缺依赖。
+- 管理成本高。
+
+---
+
+## 3. PackDirectory（按目录打包）
+
+### 行为
+
+- 将**同一个目录下的所有资源**打成一个 AssetBundle。
+- 例如：\`Assets/Art/UI/LoginPanel/\` 下的所有资源会被打成一个 Bundle，Bundle 名通常以目录路径命名。
+
+### 优点
+
+- **粒度适中**：介于全部打包和逐个打包之间，Bundle 数量可控。
+- **逻辑清晰**：资源按文件夹组织，打包结果与项目目录结构对应，容易理解和维护。
+- **依赖完整**：同一目录下的资源之间依赖通常已经包含，跨目录依赖可由 Depend 收集器处理。
+- **热更粒度合理**：更新某个目录下的资源时，只需重新下载该目录对应的 Bundle。
+- 适合大多数项目，尤其是按功能模块划分目录的项目。
+
+### 缺点
+
+- **目录划分要求高**：如果目录划分不合理（例如一个目录下资源过多或过少），可能导致 Bundle 过大或过碎。
+- **跨目录公共资源需要额外处理**：如果多个目录引用同一个公共资源，该资源需要被 Depend 收集器收集到公共 Bundle，否则会在每个目录 Bundle 中重复。
+- 如果目录层次很深，Bundle 名称会很长。
+
+---
+
+## 4. PackTopDirectory（按顶层目录打包）
+
+### 行为
+
+- 将**资源路径中最顶层的目录**（相对于收集器的收集根目录）下的所有资源打成一个 Bundle。
+- 例如收集器收集 \`Assets/Art/\` 下的资源，那么 \`Assets/Art/UI/\`、\`Assets/Art/Model/\` 等顶层目录（相对于 \`Assets/Art/\`）会被分别打包，即 \`UI\` 是一个 Bundle，\`Model\` 是一个 Bundle，而不会继续按子目录细分。
+
+### 优点
+
+- **Bundle 数量较少**：比 PackDirectory 更粗粒度，减少 Bundle 总数。
+- **适合顶层目录本身就是功能模块的场景**：比如 \`UI\`、\`Model\`、\`Audio\` 这样的划分。
+- **加载性能较好**：减少了 Bundle 数量，降低了 IO 和加载开销。
+- **热更粒度适中**：更新一个模块下的资源会重新下载该模块对应的 Bundle。
+
+### 缺点
+
+- **粒度可能过粗**：如果一个顶层目录下资源非常多，会导致单个 Bundle 过大，影响首次加载和内存。
+- **灵活性不足**：无法按更细的子目录控制打包，如果项目需要更精细的热更控制，则不适用。
+- 对目录结构要求严格，必须保证顶层目录划分合理。
+
+---
+
+## 5. PackCollector（按收集器打包）
+
+### 行为
+
+- 同一个 Collector 收集到的所有资源打成一个 Bundle。
+
+### 优点
+
+- **与收集器配置直接对应**：一个 Collector 对应一个 Bundle，逻辑清晰。
+- 适合按功能或类型划分收集器的项目。
+
+### 缺点
+
+- 如果一个 Collector 收集的资源范围很大，Bundle 可能过大。
+- 需要合理规划 Collector 的数量和范围。
+
+---
+
+## 6. PackGroup（按 Group 打包）
+
+### 行为
+
+- 将同一个 Group（可在 AssetBundle Collector 中设置 Group 名称）下的所有资源打成一个 Bundle。
+
+### 优点
+
+- 可以跨 Collector 将资源归入同一个 Group，灵活控制打包。
+- 适合按逻辑分组（如“公共UI”、“战斗资源”等）。
+
+### 缺点
+
+- 配置稍复杂，需要额外指定 Group。
+- 如果 Group 划分不当，也会出现 Bundle 过大或过小的问题。
+
+---
+
+## 对比总结
+
+| 打包规则                   | Bundle 粒度      | 热更粒度         | 加载性能     | 配置复杂度 | 适用场景                     |
+| -------------------------- | ---------------- | ---------------- | ------------ | ---------- | ---------------------------- |
+| **PackTogether**     | 极粗             | 极差             | 差（首包大） | 低         | 非常小的项目或单场景         |
+| **PackSeparately**   | 极细             | 极好             | 差（文件多） | 低         | 需要精细热更、资源量小的项目 |
+| **PackDirectory**    | 适中             | 适中             | 较好         | 中         | 大多数按目录划分的项目       |
+| **PackTopDirectory** | 较粗             | 较粗             | 好           | 中         | 顶层目录为功能模块的项目     |
+| **PackCollector**    | 取决于收集器范围 | 取决于收集器范围 | 取决于配置   | 中         | 按收集器组织的项目           |
+| **PackGroup**        | 灵活             | 灵活             | 取决于配置   | 较高       | 需要跨目录分组的项目         |
+
+---
+
+## 实际选择建议
+
+- **项目初期或小项目**：可以使用 \`PackTogether\` 快速开发，但后期需调整。
+- **资源量少、需要精细热更**：\`PackSeparately\` 可以最大化热更效率，但需注意 Bundle 数量。
+- **大多数商业项目**：推荐使用 \`PackDirectory\`，按功能目录划分 Bundle，兼顾包体大小和热更粒度。
+- **如果顶层目录就是模块划分**：使用 \`PackTopDirectory\` 可以减少 Bundle 数量，提升加载性能。
+- **特殊需求**：如需要跨 Collector 或跨目录逻辑分组，使用 \`PackGroup\`。
+
+> 实践中，通常会结合多种打包规则，通过配置多个 Collector 来实现不同资源的差异化打包。例如：
+>
+> - 核心 UI 资源用 \`PackDirectory\` 按子目录打包。
+> - 公共 Shader、字体用 Depend 收集器 + \`PackTogether\` 打成一个公共 Bundle。
+> - 大型音频或视频文件用 \`PackRawFile\` 保持原生格式。
+`,"../content/articles/Yooasset收集器寻址规则.md":`---
+title: YooAsset Collector 寻址规则详解
+date: 2026-08-31
+summary: YooAsset Collector 五种寻址规则的含义与适用场景
+---
+
+# YooAsset Collector 寻址规则详解
+
+在 YooAsset 的 **Collector（收集器）** 中，**Address Rule（寻址规则）** 决定了资源在运行时通过怎样的“地址”来加载。
+它直接影响到代码中 \`LoadAssetAsync\` 时使用的资源定位字符串，以及资源地址是否容易冲突、是否便于管理。
+
+常用的五种寻址规则如下：
+
+---
+
+## 1. AddressByFileName（按文件名寻址）
+
+### 行为
+
+- 直接使用**资源的文件名（不包含扩展名）**作为资源地址。
+- 例如：\`Assets/Art/UI/LoginPanel/LoginPanel.prefab\` 的地址就是 \`LoginPanel\`。
+
+### 优点
+
+- **地址简短易记**：不需要关心完整路径，写代码时最方便。
+- **开发效率高**：不用关心目录结构，移动资源文件不影响地址。
+- 适合资源数量不多、文件名不会重复的项目。
+
+### 缺点
+
+- **容易产生地址冲突**：如果不同文件夹下有同名文件（比如 \`icon.png\`、\`bg.png\`），加载时会因为地址重复而报错或加载到错误的资源。
+- **可读性差**：当项目资源很多时，光看地址无法判断资源属于哪个模块或分类。
+- 如果依赖热更，同名资源更新时需要额外注意。
+
+---
+
+## 2. AddressByFolderAndFileName（按文件夹+文件名寻址）
+
+### 行为
+
+- 使用**资源所在文件夹路径 + 文件名（不包含扩展名）**作为地址。
+- 例如：\`Assets/Art/UI/LoginPanel/LoginPanel.prefab\` 的地址是 \`Assets_Art_UI_LoginPanel_LoginPanel\`（具体分隔符可能被 YooAsset 转为其他格式，但逻辑上是路径+文件名）。
+
+### 优点
+
+- **避免同名冲突**：即使不同文件夹下有同名文件，地址也会不同。
+- **路径信息明确**：通过地址可以大致知道资源的位置和分类。
+- 适合项目结构清晰、资源分类管理严格的团队。
+
+### 缺点
+
+- **地址较长**：写代码时字符串比较长，容易拼错。
+- **路径依赖强**：如果项目后期调整了资源文件夹结构，所有地址都会变化，需要同步修改代码。
+- 热更时如果移动了文件路径，旧的地址会失效。
+
+---
+
+## 3. AddressByFolder（按文件夹寻址）
+
+### 行为
+
+- 使用**资源所在文件夹的路径**作为地址。
+- 一个文件夹下的所有资源共享同一个地址（通常用于加载整个文件夹下的所有资源，或通过文件夹名来指代一组资源）。
+
+### 优点
+
+- **适合批量加载**：如果一个文件夹下全是同一类资源（比如所有音效、所有图标），可以用一个地址加载全部。
+- **地址简短**：只需要记住文件夹路径。
+- 适合以文件夹为单位进行资源管理的场景。
+
+### 缺点
+
+- **无法精确定位单个资源**：因为地址对应的是一个文件夹，加载时只能得到该文件夹下的所有资源，不能指定加载某一个。
+- **使用范围有限**：大多数情况下我们只需要加载具体某个资源，这种规则过于粗粒度。
+- 容易导致不必要的资源全部加载，增加内存占用。
+
+---
+
+## 4. AddressByGroup（按收集器分组名寻址）
+
+### 行为
+
+- 使用**Collector 配置的分组名（Group Name）**作为资源地址。
+- 同一个 Collector 收集的所有资源共享同一个地址。
+
+### 优点
+
+- **适合按功能模块打包和加载**：比如把“UI”分组的所有资源打成一个 Bundle，使用分组名即可加载整个包。
+- **地址非常简短**：只需记住分组名。
+- 方便统一管理整个模块的资源生命周期。
+
+### 缺点
+
+- **粒度太粗**：无法直接加载分组内的单个资源，只能加载整个分组（或需要结合其他方式获取具体资源）。
+- 如果分组内资源很多，加载时会导致内存中同时存在大量不需要的资源。
+- 不适合需要精细控制单个资源加载释放的场景。
+
+---
+
+## 5. AddressByCustom（自定义寻址规则）
+
+### 行为
+
+- 允许开发者实现 \`IAddressRule\` 接口，**自定义如何根据资源信息生成地址**。
+- 例如可以结合项目自己的配置表，根据资源路径、文件名、标签等动态生成地址。
+
+### 优点
+
+- **灵活性最高**：可以根据项目实际需求设计任何寻址方式。
+- **可扩展性强**：可以集成项目已有的资源管理逻辑，比如按资源 ID、按语言、按平台等生成地址。
+- 避免其他规则无法满足复杂需求时的问题。
+
+### 缺点
+
+- **需要编写额外代码**：增加开发和维护成本。
+- **团队协作要求高**：必须保证所有开发人员都理解自定义规则，否则地址会混乱。
+- 如果设计不当，可能引入新的冲突或性能问题。
+
+---
+
+## 对比总结
+
+| 寻址规则                             | 地址示例（假设资源路径）                   | 优点                     | 缺点                   |
+| ------------------------------------ | ------------------------------------------ | ------------------------ | ---------------------- |
+| **AddressByFileName**          | \`LoginPanel\`                             | 简短、易写、不受路径影响 | 同名冲突风险高         |
+| **AddressByFolderAndFileName** | \`Assets_Art_UI_LoginPanel_LoginPanel\`    | 避免冲突、路径清晰       | 地址长、路径变更影响大 |
+| **AddressByFolder**            | \`Assets/Art/UI/LoginPanel\`（文件夹路径） | 批量加载方便             | 无法加载单个资源       |
+| **AddressByGroup**             | \`UI\`（分组名）                           | 简短、按模块加载         | 粒度太粗，浪费内存     |
+| **AddressByCustom**            | 自定义                                     | 最灵活、可满足特殊需求   | 开发成本高、需维护     |
+
+---
+
+## 实际选择建议
+
+- **中小型项目、资源不多、文件名不重复** → 使用 \`AddressByFileName\`，开发最快。
+- **资源较多、需要避免同名冲突、希望地址有可读性** → 使用 \`AddressByFolderAndFileName\`。
+- **需要按模块整体加载（如整个 UI 模块）** → 配合 \`AddressByGroup\` 使用。
+- **有特殊需求（如多语言、热更映射表等）** → 使用 \`AddressByCustom\` 自定义规则。
+
+> 大多数商业项目会选择 \`AddressByFolderAndFileName\`，兼顾唯一性和可读性，同时通过合理规划目录结构来减少地址长度。
+`,"../content/articles/Yooasset收集器收集方式.md":`---
+title: YooAsset Collector 模式详解
+date: 2026-08-31
+summary: YooAsset Collector 的 Main、Static、Depend 三种收集模式详解
+---
+
+# YooAsset Collector 模式详解
+
+在 YooAsset 中，**Collector（收集器）** 决定了资源如何被收集到 AssetBundle，以及如何处理资源之间的依赖关系。
+它有三种常见模式：**Main、Static、Depend**。
+
+---
+
+## 1. Main：主资源收集器
+
+### 行为
+
+- 把指定资源作为“主资源”主动收集。
+- 会把这个主资源**以及它所有依赖的资源**一起打进同一个 AssetBundle。
+- 资源可以通过路径或主资源对象直接加载。
+
+### 优点
+
+- **自包含性强**：加载主资源时不会缺少依赖，运行时更安全。
+- **配置简单**：适合作为入口资源，例如 UI Prefab、角色 Prefab、场景等。
+- 依赖关系完整，不容易出现“依赖丢失”问题。
+
+### 缺点
+
+- **容易造成资源冗余**：如果多个主资源都依赖同一个公共资源，那么这个公共资源会被重复打进多个 Bundle，导致包体变大。
+- **热更粒度粗**：公共资源更新时，所有包含它的主资源 Bundle 可能都会发生变化。
+- 如果大量使用 Main，AssetBundle 数量可能不多，但单个 Bundle 体积会膨胀。
+
+---
+
+## 2. Static：静态资源收集器
+
+### 行为
+
+- 主动收集指定资源本身。
+- **不会**把它的依赖资源打进同一个 Bundle。
+- 资源本身可以主动加载。
+- 它的依赖资源需要由其他收集器（Main 或 Depend）来收集。
+
+### 优点
+
+- **避免重复打包**：适合存放公共资源，例如图集、公共材质、音频、字体等。
+- **热更粒度更细**：公共资源独立成包，更新时只更新对应的公共 Bundle，不影响引用它的主资源包。
+- 能够更精细地控制 AssetBundle 拆分。
+
+### 缺点
+
+- **依赖不完整**：自身不包含依赖，如果依赖没有被其他收集器覆盖，运行时可能缺少资源。
+- **配置要求较高**：需要清楚地知道资源的依赖链，否则容易漏配依赖收集器。
+- 如果 Static 资源本身是复杂 Prefab，而它的依赖没有被收集，会直接导致加载失败。
+
+---
+
+## 3. Depend：依赖资源收集器
+
+### 行为
+
+- **被动收集**，不主动作为入口资源收集。
+- 它收集的是被 Main/Static 收集器依赖到的资源。
+- 收集到的资源通常**不能直接加载**，只能作为其他资源的依赖被加载。
+- 适合收集那些被很多资源间接引用的公共依赖，例如 Shader、公共贴图、字体、公共材质等。
+
+### 优点
+
+- **自动收集依赖，防止遗漏**：只要资源被主资源或静态资源依赖，并且落在 Depend 收集器的路径范围内，就会被自动收集到共享 Bundle 中。
+- **减少冗余**：公共依赖可以集中到一个或多个 Bundle，避免被重复打进多个 Main Bundle。
+- **适合做兜底收集**：例如 Shader、字体等容易被忽略的资源，用 Depend 收集会非常方便。
+
+### 缺点
+
+- **不能直接加载**：因为它不是主动收集的资源，通常不能通过资源路径直接 \`LoadAssetAsync\` 加载。
+- **收集范围需要控制**：如果 Depend 收集器配置的路径太宽泛，可能会把一些不需要的资源也收集进来。
+- **配置理解成本较高**：需要理解依赖图和收集器之间的关系，否则构建结果可能不符合预期。
+
+---
+
+## 对比总结
+
+| 模式             | 主动/被动 | 是否收集依赖        | 能否直接加载 | 典型用途                        |
+| ---------------- | --------- | ------------------- | ------------ | ------------------------------- |
+| **Main**   | 主动      | 是，打入同一 Bundle | 能           | 入口 Prefab、场景、可寻址主资源 |
+| **Static** | 主动      | 否，只收集自身      | 能           | 公共图集、材质、音频等公共资源  |
+| **Depend** | 被动      | 收集被依赖的资源    | 不能直接加载 | Shader、字体、公共依赖兜底      |
+
+---
+
+## 实际使用建议
+
+- **入口资源**用 **Main**：比如一个 UI 界面 Prefab、一个角色 Prefab，希望加载它时依赖完整，就用 Main。
+- **公共资源**用 **Static**：比如多个 UI 界面都引用的图集、公共材质，用 Static 收集，避免重复打包。
+- **容易遗漏的公共依赖**用 **Depend**：比如 Shader、字体、被多个资源间接引用的资源，用 Depend 收集作为兜底。
+- **不要全部用 Main**：虽然简单安全，但会导致 Bundle 冗余严重，包体大，热更不灵活。
+- **不要只用 Static 而不配置依赖收集**：
+  否则容易出现运行时缺依赖资源。
+
+简单来说：
+
+> **Main 适合入口，Static 适合公共资源，Depend 适合被依赖的公共资源兜底。**
+> 合理搭配这三种模式，才能在包体大小、加载安全、热更粒度之间取得平衡。
+`,"../content/articles/图片压缩格式.md":`---
+title: Unity 纹理压缩格式详解
+date: 2026-08-31
+summary: Unity 纹理压缩的 bpp 概念与主流压缩格式详解
+---
+
+1. Unity中的纹理压缩，本质上是在**文件大小/显存占用**与**图像质量**之间做权衡。GPU无法直接处理PNG或JPG，必须使用专门的压缩格式才能高效渲染。
+
+### 核心概念：每像素位数 (Bits Per Pixel, bpp)
+
+这是衡量压缩效率的关键指标。
+
+* **bpp越低** ，纹理占用的内存和磁盘空间越小，加载越快，但也意味着 **质量损失越大** 。
+* **未压缩的RGBA纹理** ，bpp为32。
+
+### 主流纹理压缩格式详解
+
+不同平台支持的格式不同，以下是Unity中主要的几种：
+
+| 格式系列             | 主要平台                    | 核心特点                                                                                          | 典型bpp                                       | 备注                                                   |
+| -------------------- | --------------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------ |
+| **DXT / BCn**  | Windows, macOS, Linux, Xbox | PC/主机主流格式，由DirectX规范定义                                                                | DXT1 (BC1):**4**DXT5 (BC3): **8** | DXT1不支持Alpha通道，DXT5支持。BC7质量更高但压缩更慢。 |
+| **ETC / ETC2** | Android                     | Android平台默认格式。ETC是OpenGL ES 2.0标准，不支持Alpha；ETC2支持Alpha，需要OpenGL ES 3.0支持。  | ETC1:**4**                              | -                                                      |
+| **PVRTC**      | iOS (老旧设备)              | Imagination PowerVR GPU专有格式。要求纹理为**正方形** 。                                    | **2** 或 **4**                    | 分2bpp和4bpp两种质量等级。                             |
+| **ASTC**       | iOS (A8芯片及以上), Android | **现代移动平台首选** 。 **最大的优势是支持灵活的块大小** ，可在质量和大小间精细调节。 | **0.89 ~ 8** (取决于块大小)             | 支持RGB和RGBA，是目前移动端最先进的格式。              |
+
+### 深入理解：ASTC的 "4x4" 与 "8x8"
+
+你问的“8x8”和“4x4”，正是指 **ASTC格式的压缩块大小** 。
+
+* **基本原理** ：ASTC将纹理分割成许多固定大小的 **像素块** （如4x4或8x8），对**每个块**独立进行压缩。
+* **关键规律** ：每个像素块固定为**128位**数据。因此， **块越大，平均到每个像素的位数（bpp）就越低，压缩率越高，但质量损失也越大** 。
+
+下面是不同块大小的对比（以**256x256纹理**为例）：
+
+| 块大小          | 总块数                 | 每像素位数 (bpp) | 压缩后大小       | 质量等级       |
+| --------------- | ---------------------- | ---------------- | ---------------- | -------------- |
+| **4x4**   | 64x64 = 4096块         | **8**      | **64 KB**  | **最高** |
+| **6x6**   | ≈ 42.7x42.7 ≈ 1824块 | ≈ 3.56          | ≈ 28.5 KB       | 较高           |
+| **8x8**   | 32x32 = 1024块         | **2**      | **16 KB**  | 中等           |
+| **10x10** | ≈ 25.6x25.6 ≈ 655块  | 1.28             | ≈ 10.2 KB       | 较低           |
+| **12x12** | ≈ 21.3x21.3 ≈ 454块  | **0.89**   | **7.6 KB** | **最低** |
+
+*注：上表数据为估算值，实际大小因纹理内容会有微小差异。*
+
+简单来说，ASTC 4x4意味着“用更多数据精雕细琢每个细节”，而ASTC 8x8则是“用更少数据，牺牲一些细节来换取更小的体积”。
+
+### 如何选择？
+
+1. **PC / 主机** ：首选 **DXT / BCn** 系列。追求极致质量选  **BC7** ，追求兼容性和速度选  **DXT5** 。
+2. **现代移动设备 (iOS/Android)** ： **首选 ASTC** 。根据纹理重要性选择块大小：
+
+* **4x4** ：用于最重要的纹理（如 **角色面部、UI** ），质量最高。
+* **6x6** ：用于一般的 **漫反射贴图** ，质量和大小均衡。
+* **8x8** ：用于不重要的纹理（如 **远处的背景** ），或 **没有Alpha通道的贴图** ，能极大节省空间。
+* **法线贴图** ：对细节敏感，建议使用 **ASTC 4x4** 或  **6x6** 。
+
+1. **老旧移动设备** ：若需兼容A7芯片之前的iOS设备，可使用  **PVRTC** ；Android则使用  **ETC / ETC2** 。
+`,"../content/articles/图片顶点.md":`---
+title: Unity Image 组件的顶点数与性能影响深度解析
+date: 2026-08-31
+summary: UGUI Image 组件顶点数对内存、DrawCall 与合批性能的影响解析
+---
+
+# Unity Image 组件的顶点数与性能影响深度解析
+
+## 1. 前置基础：UGUI 的渲染机制
+
+UGUI 并非为每个 UI 元素单独提交 DrawCall，而是将**同一个 Canvas 下所有可见 UI 元素的网格顶点合并**，打包成一个大的动态网格（Dynamic Mesh）一次性提交给 GPU。这种“合批”机制是 UGUI 高性能的基础。
+
+因此，单个 Image 的顶点数量变化，其性能影响是**间接且连锁的**——它不仅影响自身，更会影响整个 Canvas 的合批效率和重建开销。
+
+---
+
+## 2. 顶点数对内存的影响（两层面）
+
+| 层面                      | 影响程度      | 说明                                                                                                                                                                                                                                                  |
+| :------------------------ | :------------ | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **显存占用**        | 微小          | 顶点数据（位置、UV、颜色、法线等）确实随顶点数增加而增加，但单个 Image 即使有上百个顶点，数据量也仅几 KB，对显存压力几乎可忽略。                                                                                                                      |
+| **CPU 堆内存 & GC** | ⚠️ 主要瓶颈 | 当 Image 的网格发生变化（如 Tiled 模式缩放、Filled 进度更新），UGUI 会将网格标记为“脏”，并在重建时分配新的顶点数组。**频繁变动**会导致大量临时内存分配，触发频繁的垃圾回收（GC），造成 UI 卡顿。其中 **Tiled 和 Filled 模式是重灾区**。 |
+
+---
+
+## 3. 顶点数对 DrawCall 的影响（关键阈值）
+
+DrawCall 数量不取决于顶点总数，而取决于**合批是否被破坏**。顶点数通过以下两个阈值间接影响合批：
+
+### 3.1 阈值一：单批次的 900 顶点硬上限
+
+- **规则**：Unity 的动态合批限制每个 Sub-mesh **最多容纳 900 个顶点**。
+- **后果**：当一个 Canvas 下所有 UI 元素的**顶点总数超过 900** 时，UGUI 会强制拆分出多个 Sub-mesh，导致 **DrawCall 增加**（从 1 个变成多个）。
+- **极端情况**：单个 Tiled Image 自身就超过 900 顶点，它会单独成为一个批次，破坏与其他元素的合批。
+
+### 3.2 阈值二：深度排序与重建范围
+
+- **合批破坏的主因**实际上是 **材质或纹理的切换**，顶点数量本身不会直接打断合批。
+- **但顶点过多会**：
+  - 增大网格的包围盒，导致 Canvas 的**脏区域（Dirty Rect）**扩大，迫使更多元素参与重建。
+  - 可能因渲染顺序（深度排序）的调整，原本相邻的元素被分散到不同批次，间接降低合批效率。
+
+---
+
+## 4. 各 Image Type 的详细性能剖析（含顶点与三角形数量）
+
+| Image Type       | 顶点数量                                                | 三角形数量                                                      | 内存/GC 风险                                                             | DrawCall/合批风险                                                                                             | 典型场景                          |
+| :--------------- | :------------------------------------------------------ | :-------------------------------------------------------------- | :----------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------ | :-------------------------------- |
+| **Simple** | 固定 4 个                                               | 固定 2 个                                                       | ✅**极低** — 缩放不重建网格，仅改变 Transform 矩阵                | ✅**友好** — 4 个顶点极易合并，几乎不影响合批                                                          | 普通图标、按钮                    |
+| **Sliced** | 36 个（勾选\`FillCenter\`）32 个（取消 \`FillCenter\`） | 18 个（勾选\`FillCenter\`）16 个（取消 \`FillCenter\`）         | ✅**静态安全** — 九宫格顶点固定，缩放不重建                       | ✅**友好** — 顶点数固定，易于合批                                                                      | 九宫格边框、背景                  |
+| **Tiled**  | **4 × N** 个（N 为平铺图片数量）                 | **2 × N** 个                                             | ❌**极度危险** — Rect 变化即重建全部顶点，GC 压力巨大             | ❌**合批杀手** — 顶点数轻易超 900，独立成批，破坏合批                                                  | 平铺纹理背景（应避免用于动态 UI） |
+| **Filled** | **最少 4 个**（随填充方式和进度动态变化）         | **不定**（随填充方式如径向 360° 和 \`fillAmount\` 变化） | ❌**极其危险** — \`fillAmount\` 每帧变化都会重建顶点，产生大量 GC | ⚠️**中度风险** — 顶点数通常不超 900（径向 360° 也仅几十个），但频繁重建消耗 CPU，影响合批缓冲区重组 | 进度条、转圈加载（需谨慎使用）    |
+
+> **补充说明**：Image 组件还有一个 **\`Use Sprite Mesh\`** 选项。启用后，网格会使用精灵（Sprite）本身的网格形状（例如多边形精灵），而非简单的矩形。这会**显著增加顶点和三角形数量**，进而影响内存和合批效率。除非确实需要精确匹配精灵形状，否则建议保持关闭。
+
+---
+
+## 5. 终极优化实践建议
+
+### 内存优化（首要目标）
+
+- **绝对避免**在**高频更新**的 UI 元素（如滚动列表中的动态内容、实时血量条）上使用 **Tiled** 或 **Filled** 模式。
+- 若必须实现平铺效果，优先采用：
+  - 用 **Simple** 模式配合自定义 Shader 实现纹理重复。
+  - 或使用 \`Maskable\` + 子对象平铺，但注意控制总顶点数。
+- 除非必要，**关闭 \`Use Sprite Mesh\`**，以保持网格简单。
+
+### DrawCall 优化
+
+- 严格控制**单个 Canvas 下所有 UI 组件的顶点总数**低于 **700～800**（留出安全余量，避免触碰 900 上限）。
+- 对于复杂 UI（如多层级弹窗、HUD），采用**多个独立 Canvas**（勾选 \`Override Pixel Perfect\`）手动拆分批次，这样比 Unity 自动超限拆批更可控，且每个 Canvas 独立合批，互不干扰。
+
+---
+
+### 正确方案：拆分 Canvas（所有 Unity 版本通用）
+
+- 将**动态 UI**（如经常变化文本、图片、位置的元素）和**静态 UI**（如背景、边框）放置在不同的 Canvas 下。
+- 这样，动态部分的重建（Rebuild）不会污染静态 Canvas 的合批网格，从而**避免静态部分被反复重建**，有效降低 CPU 开销和 DrawCall 波动。
+- 对于复杂的、需要整体控制显隐的 UI 组，可以使用 \`Canvas Group\` 组件来替代直接操作子对象，以减少网格标记为“脏”的频率。
+
+## 6. 总结
+
+> **Simple 模式性能最佳，Sliced 稳定可靠，Tiled 和 Filled 是性能陷阱（顶点、三角形均动态变化），务必慎用于动态场景。总顶点数控制在 800 以内，善用 Canvas 拆分，2021+ 版本启用 Batch Render Group。同时，除非必要，避免开启 Use Sprite Mesh。**
+`});function Zl(e){let t=e.split(/\r?\n/);if(t[0]?.trim()!==`---`)return{data:{},content:e};let n=t.findIndex((e,t)=>t>0&&e.trim()===`---`);if(n===-1)return{data:{},content:e};let r={};for(let e of t.slice(1,n)){let t=e.indexOf(`:`);if(t===-1)continue;let n=e.slice(0,t).trim(),i=e.slice(t+1).trim().replace(/^(['"])(.*)\1$/,`$2`);n&&(r[n]=i)}return{data:r,content:t.slice(n+1).join(`
 `)}}var Ql=Object.entries(Xl).map(([e,t])=>{let n=e.split(`/`).pop().replace(/\.md$/,``),{data:r,content:i}=Zl(t);if(typeof r.title!=`string`||r.title.trim()===``)throw Error(`[content] 文章 ${n}.md 缺少必填 frontmatter title`);let a=String(r.date??``);/^\d{4}-\d{2}-\d{2}$/.test(a)||(console.warn(`[content] 文章 ${n}.md 的 frontmatter date 缺失或格式不符，使用哨兵日期 1970-01-01`),a=`1970-01-01`);let o=typeof r.summary==`string`?r.summary:``,s=i.replace(/```[\s\S]*?```/g,``).replace(/\s/g,``),c=Math.max(1,Math.ceil(s.length/300));return{slug:n,title:r.title.trim(),date:a,summary:o,raw:i,readingMinutes:c}});if(Ql.length===0)throw Error(`[content] 文章注册表为空：src/content/articles/ 下未发现任何 .md 文章`);Ql.sort((e,t)=>e.date<t.date?1:-1);function $l(e){return Ql.find(t=>t.slug===e)}var eu={class:`view`},tu={key:0,class:`empty-hint`},nu={key:1,class:`article-list`},ru={class:`article-title`},iu={key:0,class:`article-summary`},au={class:`article-meta`},ou=fl(M({__name:`ArticlesView`,setup(e){let t=e=>e.date===`1970-01-01`?`日期未知`:e.date;return(e,n)=>(N(),P(`div`,eu,[n[0]||=F(`h1`,{class:`page-title`},`技术文章`,-1),j(Ql).length===0?(N(),P(`p`,tu,`暂无文章`)):(N(),P(`ol`,nu,[(N(!0),P(Ji,null,Pr(j(Ql),e=>(N(),P(`li`,{key:e.slug,class:`article-item`},[I(j(Xc),{to:`/articles/${e.slug}`,class:`article-link`},{default:Fn(()=>[F(`div`,ru,E(e.title),1),e.summary?(N(),P(`p`,iu,E(e.summary),1)):ma(``,!0),F(`div`,au,E(t(e))+` · 约 `+E(e.readingMinutes)+` 分钟`,1)]),_:2},1032,[`to`])]))),128))]))]))}}),[[`__scopeId`,`data-v-0d1d3330`]]),su={};function cu(e){let t=su[e];if(t)return t;t=su[e]=[];for(let e=0;e<128;e++){let n=String.fromCharCode(e);t.push(n)}for(let n=0;n<e.length;n++){let r=e.charCodeAt(n);t[r]=`%`+(`0`+r.toString(16).toUpperCase()).slice(-2)}return t}function lu(e,t){typeof t!=`string`&&(t=lu.defaultChars);let n=cu(t);return e.replace(/(%[a-f0-9]{2})+/gi,function(e){let t=``;for(let r=0,i=e.length;r<i;r+=3){let a=parseInt(e.slice(r+1,r+3),16);if(a<128){t+=n[a];continue}if((a&224)==192&&r+3<i){let n=parseInt(e.slice(r+4,r+6),16);if((n&192)==128){let e=a<<6&1984|n&63;t+=e<128?`��`:String.fromCharCode(e),r+=3;continue}}if((a&240)==224&&r+6<i){let n=parseInt(e.slice(r+4,r+6),16),i=parseInt(e.slice(r+7,r+9),16);if((n&192)==128&&(i&192)==128){let e=a<<12&61440|n<<6&4032|i&63;t+=e<2048||e>=55296&&e<=57343?`���`:String.fromCharCode(e),r+=6;continue}}if((a&248)==240&&r+9<i){let n=parseInt(e.slice(r+4,r+6),16),i=parseInt(e.slice(r+7,r+9),16),o=parseInt(e.slice(r+10,r+12),16);if((n&192)==128&&(i&192)==128&&(o&192)==128){let e=a<<18&1835008|n<<12&258048|i<<6&4032|o&63;e<65536||e>1114111?t+=`����`:(e-=65536,t+=String.fromCharCode(55296+(e>>10),56320+(e&1023))),r+=9;continue}}t+=`�`}return t})}lu.defaultChars=`;/?:@&=+$,#`,lu.componentChars=``;var uu={};function du(e){let t=uu[e];if(t)return t;t=uu[e]=[];for(let e=0;e<128;e++){let n=String.fromCharCode(e);/^[0-9a-z]$/i.test(n)?t.push(n):t.push(`%`+(`0`+e.toString(16).toUpperCase()).slice(-2))}for(let n=0;n<e.length;n++)t[e.charCodeAt(n)]=e[n];return t}function fu(e,t,n){typeof t!=`string`&&(n=t,t=fu.defaultChars),n===void 0&&(n=!0);let r=du(t),i=``;for(let t=0,a=e.length;t<a;t++){let o=e.charCodeAt(t);if(n&&o===37&&t+2<a&&/^[0-9a-f]{2}$/i.test(e.slice(t+1,t+3))){i+=e.slice(t,t+3),t+=2;continue}if(o<128){i+=r[o];continue}if(o>=55296&&o<=57343){if(o>=55296&&o<=56319&&t+1<a){let n=e.charCodeAt(t+1);if(n>=56320&&n<=57343){i+=encodeURIComponent(e[t]+e[t+1]),t++;continue}}i+=`%EF%BF%BD`;continue}i+=encodeURIComponent(e[t])}return i}fu.defaultChars=`;/?:@&=+$,-_.!~*'()#`,fu.componentChars=`-_.!~*'()`;function pu(e){let t=``;return t+=e.protocol||``,t+=e.slashes?`//`:``,t+=e.auth?e.auth+`@`:``,e.hostname&&e.hostname.indexOf(`:`)!==-1?t+=`[`+e.hostname+`]`:t+=e.hostname||``,t+=e.port?`:`+e.port:``,t+=e.pathname||``,t+=e.search||``,t+=e.hash||``,t}function mu(){this.protocol=null,this.slashes=null,this.auth=null,this.port=null,this.hostname=null,this.hash=null,this.search=null,this.pathname=null}var hu=/^([a-z0-9.+-]+:)/i,gu=/:[0-9]*$/,_u=/^(\/\/?(?!\/)[^\?\s]*)(\?[^\s]*)?$/,vu=[`%`,`/`,`?`,`;`,`#`,`'`,`{`,`}`,`|`,`\\`,`^`,"`",`<`,`>`,`"`,"`",` `,`\r`,`
 `,`	`],yu=[`/`,`?`,`#`],bu=255,xu=/^[+a-z0-9A-Z_-]{0,63}$/,Su=/^([+a-z0-9A-Z_-]{0,63})(.*)$/,Cu={javascript:!0,"javascript:":!0},wu={http:!0,https:!0,ftp:!0,gopher:!0,file:!0,"http:":!0,"https:":!0,"ftp:":!0,"gopher:":!0,"file:":!0};function Tu(e,t){if(e&&e instanceof mu)return e;let n=new mu;return n.parse(e,t),n}mu.prototype.parse=function(e,t){let n,r,i,a=e;if(a=a.trim(),!t&&e.split(`#`).length===1){let e=_u.exec(a);if(e)return this.pathname=e[1],e[2]&&(this.search=e[2]),this}let o=hu.exec(a);if(o&&(o=o[0],n=o.toLowerCase(),this.protocol=o,a=a.substr(o.length)),(t||o||a.match(/^\/\/[^@\/]+@[^@\/]+/))&&(i=a.substr(0,2)===`//`,i&&!(o&&Cu[o])&&(a=a.substr(2),this.slashes=!0)),!Cu[o]&&(i||o&&!wu[o])){let e=-1;for(let t=0;t<yu.length;t++)r=a.indexOf(yu[t]),r!==-1&&(e===-1||r<e)&&(e=r);let t,n;n=e===-1?a.lastIndexOf(`@`):a.lastIndexOf(`@`,e),n!==-1&&(t=a.slice(0,n),a=a.slice(n+1),this.auth=t),e=-1;for(let t=0;t<vu.length;t++)r=a.indexOf(vu[t]),r!==-1&&(e===-1||r<e)&&(e=r);e===-1&&(e=a.length),a[e-1]===`:`&&e--;let i=a.slice(0,e);a=a.slice(e),this.parseHost(i),this.hostname=this.hostname||``;let o=this.hostname[0]===`[`&&this.hostname[this.hostname.length-1]===`]`;if(!o){let e=this.hostname.split(/\./);for(let t=0,n=e.length;t<n;t++){let n=e[t];if(n&&!n.match(xu)){let r=``;for(let e=0,t=n.length;e<t;e++)n.charCodeAt(e)>127?r+=`x`:r+=n[e];if(!r.match(xu)){let r=e.slice(0,t),i=e.slice(t+1),o=n.match(Su);o&&(r.push(o[1]),i.unshift(o[2])),i.length&&(a=i.join(`.`)+a),this.hostname=r.join(`.`);break}}}}this.hostname.length>bu&&(this.hostname=``),o&&(this.hostname=this.hostname.substr(1,this.hostname.length-2))}let s=a.indexOf(`#`);s!==-1&&(this.hash=a.substr(s),a=a.slice(0,s));let c=a.indexOf(`?`);return c!==-1&&(this.search=a.substr(c),a=a.slice(0,c)),a&&(this.pathname=a),wu[n]&&this.hostname&&!this.pathname&&(this.pathname=``),this},mu.prototype.parseHost=function(e){let t=gu.exec(e);t&&(t=t[0],t!==`:`&&(this.port=t.substr(1)),e=e.substr(0,e.length-t.length)),e&&(this.hostname=e)};var Eu=t({decode:()=>lu,encode:()=>fu,format:()=>pu,parse:()=>Tu}),Du=/[\0-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]/,Ou=/[\0-\x1F\x7F-\x9F]/,ku=/[\xAD\u0600-\u0605\u061C\u06DD\u070F\u0890\u0891\u08E2\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF\uFFF9-\uFFFB]|\uD804[\uDCBD\uDCCD]|\uD80D[\uDC30-\uDC3F]|\uD82F[\uDCA0-\uDCA3]|\uD834[\uDD73-\uDD7A]|\uDB40[\uDC01\uDC20-\uDC7F]/,Au=/[!-#%-\*,-\/:;\?@\[-\]_\{\}\xA1\xA7\xAB\xB6\xB7\xBB\xBF\u037E\u0387\u055A-\u055F\u0589\u058A\u05BE\u05C0\u05C3\u05C6\u05F3\u05F4\u0609\u060A\u060C\u060D\u061B\u061D-\u061F\u066A-\u066D\u06D4\u0700-\u070D\u07F7-\u07F9\u0830-\u083E\u085E\u0964\u0965\u0970\u09FD\u0A76\u0AF0\u0C77\u0C84\u0DF4\u0E4F\u0E5A\u0E5B\u0F04-\u0F12\u0F14\u0F3A-\u0F3D\u0F85\u0FD0-\u0FD4\u0FD9\u0FDA\u104A-\u104F\u10FB\u1360-\u1368\u1400\u166E\u169B\u169C\u16EB-\u16ED\u1735\u1736\u17D4-\u17D6\u17D8-\u17DA\u1800-\u180A\u1944\u1945\u1A1E\u1A1F\u1AA0-\u1AA6\u1AA8-\u1AAD\u1B5A-\u1B60\u1B7D\u1B7E\u1BFC-\u1BFF\u1C3B-\u1C3F\u1C7E\u1C7F\u1CC0-\u1CC7\u1CD3\u2010-\u2027\u2030-\u2043\u2045-\u2051\u2053-\u205E\u207D\u207E\u208D\u208E\u2308-\u230B\u2329\u232A\u2768-\u2775\u27C5\u27C6\u27E6-\u27EF\u2983-\u2998\u29D8-\u29DB\u29FC\u29FD\u2CF9-\u2CFC\u2CFE\u2CFF\u2D70\u2E00-\u2E2E\u2E30-\u2E4F\u2E52-\u2E5D\u3001-\u3003\u3008-\u3011\u3014-\u301F\u3030\u303D\u30A0\u30FB\uA4FE\uA4FF\uA60D-\uA60F\uA673\uA67E\uA6F2-\uA6F7\uA874-\uA877\uA8CE\uA8CF\uA8F8-\uA8FA\uA8FC\uA92E\uA92F\uA95F\uA9C1-\uA9CD\uA9DE\uA9DF\uAA5C-\uAA5F\uAADE\uAADF\uAAF0\uAAF1\uABEB\uFD3E\uFD3F\uFE10-\uFE19\uFE30-\uFE52\uFE54-\uFE61\uFE63\uFE68\uFE6A\uFE6B\uFF01-\uFF03\uFF05-\uFF0A\uFF0C-\uFF0F\uFF1A\uFF1B\uFF1F\uFF20\uFF3B-\uFF3D\uFF3F\uFF5B\uFF5D\uFF5F-\uFF65]|\uD800[\uDD00-\uDD02\uDF9F\uDFD0]|\uD801\uDD6F|\uD802[\uDC57\uDD1F\uDD3F\uDE50-\uDE58\uDE7F\uDEF0-\uDEF6\uDF39-\uDF3F\uDF99-\uDF9C]|\uD803[\uDEAD\uDF55-\uDF59\uDF86-\uDF89]|\uD804[\uDC47-\uDC4D\uDCBB\uDCBC\uDCBE-\uDCC1\uDD40-\uDD43\uDD74\uDD75\uDDC5-\uDDC8\uDDCD\uDDDB\uDDDD-\uDDDF\uDE38-\uDE3D\uDEA9]|\uD805[\uDC4B-\uDC4F\uDC5A\uDC5B\uDC5D\uDCC6\uDDC1-\uDDD7\uDE41-\uDE43\uDE60-\uDE6C\uDEB9\uDF3C-\uDF3E]|\uD806[\uDC3B\uDD44-\uDD46\uDDE2\uDE3F-\uDE46\uDE9A-\uDE9C\uDE9E-\uDEA2\uDF00-\uDF09]|\uD807[\uDC41-\uDC45\uDC70\uDC71\uDEF7\uDEF8\uDF43-\uDF4F\uDFFF]|\uD809[\uDC70-\uDC74]|\uD80B[\uDFF1\uDFF2]|\uD81A[\uDE6E\uDE6F\uDEF5\uDF37-\uDF3B\uDF44]|\uD81B[\uDE97-\uDE9A\uDFE2]|\uD82F\uDC9F|\uD836[\uDE87-\uDE8B]|\uD83A[\uDD5E\uDD5F]/,ju=/[\$\+<->\^`\|~\xA2-\xA6\xA8\xA9\xAC\xAE-\xB1\xB4\xB8\xD7\xF7\u02C2-\u02C5\u02D2-\u02DF\u02E5-\u02EB\u02ED\u02EF-\u02FF\u0375\u0384\u0385\u03F6\u0482\u058D-\u058F\u0606-\u0608\u060B\u060E\u060F\u06DE\u06E9\u06FD\u06FE\u07F6\u07FE\u07FF\u0888\u09F2\u09F3\u09FA\u09FB\u0AF1\u0B70\u0BF3-\u0BFA\u0C7F\u0D4F\u0D79\u0E3F\u0F01-\u0F03\u0F13\u0F15-\u0F17\u0F1A-\u0F1F\u0F34\u0F36\u0F38\u0FBE-\u0FC5\u0FC7-\u0FCC\u0FCE\u0FCF\u0FD5-\u0FD8\u109E\u109F\u1390-\u1399\u166D\u17DB\u1940\u19DE-\u19FF\u1B61-\u1B6A\u1B74-\u1B7C\u1FBD\u1FBF-\u1FC1\u1FCD-\u1FCF\u1FDD-\u1FDF\u1FED-\u1FEF\u1FFD\u1FFE\u2044\u2052\u207A-\u207C\u208A-\u208C\u20A0-\u20C0\u2100\u2101\u2103-\u2106\u2108\u2109\u2114\u2116-\u2118\u211E-\u2123\u2125\u2127\u2129\u212E\u213A\u213B\u2140-\u2144\u214A-\u214D\u214F\u218A\u218B\u2190-\u2307\u230C-\u2328\u232B-\u2426\u2440-\u244A\u249C-\u24E9\u2500-\u2767\u2794-\u27C4\u27C7-\u27E5\u27F0-\u2982\u2999-\u29D7\u29DC-\u29FB\u29FE-\u2B73\u2B76-\u2B95\u2B97-\u2BFF\u2CE5-\u2CEA\u2E50\u2E51\u2E80-\u2E99\u2E9B-\u2EF3\u2F00-\u2FD5\u2FF0-\u2FFF\u3004\u3012\u3013\u3020\u3036\u3037\u303E\u303F\u309B\u309C\u3190\u3191\u3196-\u319F\u31C0-\u31E3\u31EF\u3200-\u321E\u322A-\u3247\u3250\u3260-\u327F\u328A-\u32B0\u32C0-\u33FF\u4DC0-\u4DFF\uA490-\uA4C6\uA700-\uA716\uA720\uA721\uA789\uA78A\uA828-\uA82B\uA836-\uA839\uAA77-\uAA79\uAB5B\uAB6A\uAB6B\uFB29\uFBB2-\uFBC2\uFD40-\uFD4F\uFDCF\uFDFC-\uFDFF\uFE62\uFE64-\uFE66\uFE69\uFF04\uFF0B\uFF1C-\uFF1E\uFF3E\uFF40\uFF5C\uFF5E\uFFE0-\uFFE6\uFFE8-\uFFEE\uFFFC\uFFFD]|\uD800[\uDD37-\uDD3F\uDD79-\uDD89\uDD8C-\uDD8E\uDD90-\uDD9C\uDDA0\uDDD0-\uDDFC]|\uD802[\uDC77\uDC78\uDEC8]|\uD805\uDF3F|\uD807[\uDFD5-\uDFF1]|\uD81A[\uDF3C-\uDF3F\uDF45]|\uD82F\uDC9C|\uD833[\uDF50-\uDFC3]|\uD834[\uDC00-\uDCF5\uDD00-\uDD26\uDD29-\uDD64\uDD6A-\uDD6C\uDD83\uDD84\uDD8C-\uDDA9\uDDAE-\uDDEA\uDE00-\uDE41\uDE45\uDF00-\uDF56]|\uD835[\uDEC1\uDEDB\uDEFB\uDF15\uDF35\uDF4F\uDF6F\uDF89\uDFA9\uDFC3]|\uD836[\uDC00-\uDDFF\uDE37-\uDE3A\uDE6D-\uDE74\uDE76-\uDE83\uDE85\uDE86]|\uD838[\uDD4F\uDEFF]|\uD83B[\uDCAC\uDCB0\uDD2E\uDEF0\uDEF1]|\uD83C[\uDC00-\uDC2B\uDC30-\uDC93\uDCA0-\uDCAE\uDCB1-\uDCBF\uDCC1-\uDCCF\uDCD1-\uDCF5\uDD0D-\uDDAD\uDDE6-\uDE02\uDE10-\uDE3B\uDE40-\uDE48\uDE50\uDE51\uDE60-\uDE65\uDF00-\uDFFF]|\uD83D[\uDC00-\uDED7\uDEDC-\uDEEC\uDEF0-\uDEFC\uDF00-\uDF76\uDF7B-\uDFD9\uDFE0-\uDFEB\uDFF0]|\uD83E[\uDC00-\uDC0B\uDC10-\uDC47\uDC50-\uDC59\uDC60-\uDC87\uDC90-\uDCAD\uDCB0\uDCB1\uDD00-\uDE53\uDE60-\uDE6D\uDE70-\uDE7C\uDE80-\uDE88\uDE90-\uDEBD\uDEBF-\uDEC5\uDECE-\uDEDB\uDEE0-\uDEE8\uDEF0-\uDEF8\uDF00-\uDF92\uDF94-\uDFCA]/,Mu=/[ \xA0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]/,Nu=t({Any:()=>Du,Cc:()=>Ou,Cf:()=>ku,P:()=>Au,S:()=>ju,Z:()=>Mu}),Pu=new Uint16Array(`ᵁ<Õıʊҝջאٵ۞ޢߖࠏ੊ઑඡ๭༉༦჊ረዡᐕᒝᓃᓟᔥ\0\0\0\0\0\0ᕫᛍᦍᰒᷝ὾⁠↰⊍⏀⏻⑂⠤⤒ⴈ⹈⿎〖㊺㘹㞬㣾㨨㩱㫠㬮ࠀEMabcfglmnoprstu\\bfms¦³¹ÈÏlig耻Æ䃆P耻&䀦cute耻Á䃁reve;䄂Āiyx}rc耻Â䃂;䐐r;쀀𝔄rave耻À䃀pha;䎑acr;䄀d;橓Āgp¡on;䄄f;쀀𝔸plyFunction;恡ing耻Å䃅Ācs¾Ãr;쀀𝒜ign;扔ilde耻Ã䃃ml耻Ä䃄ЀaceforsuåûþėĜĢħĪĀcrêòkslash;或Ŷöø;櫧ed;挆y;䐑ƀcrtąċĔause;戵noullis;愬a;䎒r;쀀𝔅pf;쀀𝔹eve;䋘còēmpeq;扎܀HOacdefhilorsuōőŖƀƞƢƵƷƺǜȕɳɸɾcy;䐧PY耻©䂩ƀcpyŝŢźute;䄆Ā;iŧŨ拒talDifferentialD;慅leys;愭ȀaeioƉƎƔƘron;䄌dil耻Ç䃇rc;䄈nint;戰ot;䄊ĀdnƧƭilla;䂸terDot;䂷òſi;䎧rcleȀDMPTǇǋǑǖot;抙inus;抖lus;投imes;抗oĀcsǢǸkwiseContourIntegral;戲eCurlyĀDQȃȏoubleQuote;思uote;怙ȀlnpuȞȨɇɕonĀ;eȥȦ户;橴ƀgitȯȶȺruent;扡nt;戯ourIntegral;戮ĀfrɌɎ;愂oduct;成nterClockwiseContourIntegral;戳oss;樯cr;쀀𝒞pĀ;Cʄʅ拓ap;才րDJSZacefiosʠʬʰʴʸˋ˗ˡ˦̳ҍĀ;oŹʥtrahd;椑cy;䐂cy;䐅cy;䐏ƀgrsʿ˄ˇger;怡r;憡hv;櫤Āayː˕ron;䄎;䐔lĀ;t˝˞戇a;䎔r;쀀𝔇Āaf˫̧Ācm˰̢riticalȀADGT̖̜̀̆cute;䂴oŴ̋̍;䋙bleAcute;䋝rave;䁠ilde;䋜ond;拄ferentialD;慆Ѱ̽\0\0\0͔͂\0Ѕf;쀀𝔻ƀ;DE͈͉͍䂨ot;惜qual;扐blèCDLRUVͣͲ΂ϏϢϸontourIntegraìȹoɴ͹\0\0ͻ»͉nArrow;懓Āeo·ΤftƀARTΐΖΡrrow;懐ightArrow;懔eåˊngĀLRΫτeftĀARγιrrow;柸ightArrow;柺ightArrow;柹ightĀATϘϞrrow;懒ee;抨pɁϩ\0\0ϯrrow;懑ownArrow;懕erticalBar;戥ǹABLRTaВЪаўѿͼrrowƀ;BUНОТ憓ar;椓pArrow;懵reve;䌑eft˒к\0ц\0ѐightVector;楐eeVector;楞ectorĀ;Bљњ憽ar;楖ightǔѧ\0ѱeeVector;楟ectorĀ;BѺѻ懁ar;楗eeĀ;A҆҇护rrow;憧ĀctҒҗr;쀀𝒟rok;䄐ࠀNTacdfglmopqstuxҽӀӄӋӞӢӧӮӵԡԯԶՒ՝ՠեG;䅊H耻Ð䃐cute耻É䃉ƀaiyӒӗӜron;䄚rc耻Ê䃊;䐭ot;䄖r;쀀𝔈rave耻È䃈ement;戈ĀapӺӾcr;䄒tyɓԆ\0\0ԒmallSquare;旻erySmallSquare;斫ĀgpԦԪon;䄘f;쀀𝔼silon;䎕uĀaiԼՉlĀ;TՂՃ橵ilde;扂librium;懌Āci՗՚r;愰m;橳a;䎗ml耻Ë䃋Āipժկsts;戃onentialE;慇ʀcfiosօֈ֍ֲ׌y;䐤r;쀀𝔉lledɓ֗\0\0֣mallSquare;旼erySmallSquare;斪Ͱֺ\0ֿ\0\0ׄf;쀀𝔽All;戀riertrf;愱cò׋؀JTabcdfgorstר׬ׯ׺؀ؒؖ؛؝أ٬ٲcy;䐃耻>䀾mmaĀ;d׷׸䎓;䏜reve;䄞ƀeiy؇،ؐdil;䄢rc;䄜;䐓ot;䄠r;쀀𝔊;拙pf;쀀𝔾eater̀EFGLSTصلَٖٛ٦qualĀ;Lؾؿ扥ess;招ullEqual;执reater;檢ess;扷lantEqual;橾ilde;扳cr;쀀𝒢;扫ЀAacfiosuڅڋږڛڞڪھۊRDcy;䐪Āctڐڔek;䋇;䁞irc;䄤r;愌lbertSpace;愋ǰگ\0ڲf;愍izontalLine;攀Āctۃۅòکrok;䄦mpńېۘownHumðįqual;扏܀EJOacdfgmnostuۺ۾܃܇܎ܚܞܡܨ݄ݸދޏޕcy;䐕lig;䄲cy;䐁cute耻Í䃍Āiyܓܘrc耻Î䃎;䐘ot;䄰r;愑rave耻Ì䃌ƀ;apܠܯܿĀcgܴܷr;䄪inaryI;慈lieóϝǴ݉\0ݢĀ;eݍݎ戬Āgrݓݘral;戫section;拂isibleĀCTݬݲomma;恣imes;恢ƀgptݿރވon;䄮f;쀀𝕀a;䎙cr;愐ilde;䄨ǫޚ\0ޞcy;䐆l耻Ï䃏ʀcfosuެ޷޼߂ߐĀiyޱ޵rc;䄴;䐙r;쀀𝔍pf;쀀𝕁ǣ߇\0ߌr;쀀𝒥rcy;䐈kcy;䐄΀HJacfosߤߨ߽߬߱ࠂࠈcy;䐥cy;䐌ppa;䎚Āey߶߻dil;䄶;䐚r;쀀𝔎pf;쀀𝕂cr;쀀𝒦րJTaceflmostࠥࠩࠬࡐࡣ঳সে্਷ੇcy;䐉耻<䀼ʀcmnpr࠷࠼ࡁࡄࡍute;䄹bda;䎛g;柪lacetrf;愒r;憞ƀaeyࡗ࡜ࡡron;䄽dil;䄻;䐛Āfsࡨ॰tԀACDFRTUVarࡾࢩࢱࣦ࣠ࣼयज़ΐ४Ānrࢃ࢏gleBracket;柨rowƀ;BR࢙࢚࢞憐ar;懤ightArrow;懆eiling;挈oǵࢷ\0ࣃbleBracket;柦nǔࣈ\0࣒eeVector;楡ectorĀ;Bࣛࣜ懃ar;楙loor;挊ightĀAV࣯ࣵrrow;憔ector;楎Āerँगeƀ;AVउऊऐ抣rrow;憤ector;楚iangleƀ;BEतथऩ抲ar;槏qual;抴pƀDTVषूौownVector;楑eeVector;楠ectorĀ;Bॖॗ憿ar;楘ectorĀ;B॥०憼ar;楒ightáΜs̀EFGLSTॾঋকঝঢভqualGreater;拚ullEqual;扦reater;扶ess;檡lantEqual;橽ilde;扲r;쀀𝔏Ā;eঽা拘ftarrow;懚idot;䄿ƀnpw৔ਖਛgȀLRlr৞৷ਂਐeftĀAR০৬rrow;柵ightArrow;柷ightArrow;柶eftĀarγਊightáοightáϊf;쀀𝕃erĀLRਢਬeftArrow;憙ightArrow;憘ƀchtਾੀੂòࡌ;憰rok;䅁;扪Ѐacefiosuਗ਼੝੠੷੼અઋ઎p;椅y;䐜Ādl੥੯iumSpace;恟lintrf;愳r;쀀𝔐nusPlus;戓pf;쀀𝕄cò੶;䎜ҀJacefostuણધભીଔଙඑ඗ඞcy;䐊cute;䅃ƀaey઴હાron;䅇dil;䅅;䐝ƀgswે૰଎ativeƀMTV૓૟૨ediumSpace;怋hiĀcn૦૘ë૙eryThiî૙tedĀGL૸ଆreaterGreateòٳessLesóੈLine;䀊r;쀀𝔑ȀBnptଢନଷ଺reak;恠BreakingSpace;䂠f;愕ڀ;CDEGHLNPRSTV୕ୖ୪୼஡௫ఄ౞಄ದ೘ൡඅ櫬Āou୛୤ngruent;扢pCap;扭oubleVerticalBar;戦ƀlqxஃஊ஛ement;戉ualĀ;Tஒஓ扠ilde;쀀≂̸ists;戄reater΀;EFGLSTஶஷ஽௉௓௘௥扯qual;扱ullEqual;쀀≧̸reater;쀀≫̸ess;批lantEqual;쀀⩾̸ilde;扵umpń௲௽ownHump;쀀≎̸qual;쀀≏̸eĀfsఊధtTriangleƀ;BEచఛడ拪ar;쀀⧏̸qual;括s̀;EGLSTవశ఼ౄోౘ扮qual;扰reater;扸ess;쀀≪̸lantEqual;쀀⩽̸ilde;扴estedĀGL౨౹reaterGreater;쀀⪢̸essLess;쀀⪡̸recedesƀ;ESಒಓಛ技qual;쀀⪯̸lantEqual;拠ĀeiಫಹverseElement;戌ghtTriangleƀ;BEೋೌ೒拫ar;쀀⧐̸qual;拭ĀquೝഌuareSuĀbp೨೹setĀ;E೰ೳ쀀⊏̸qual;拢ersetĀ;Eഃആ쀀⊐̸qual;拣ƀbcpഓതൎsetĀ;Eഛഞ쀀⊂⃒qual;抈ceedsȀ;ESTലള഻െ抁qual;쀀⪰̸lantEqual;拡ilde;쀀≿̸ersetĀ;E൘൛쀀⊃⃒qual;抉ildeȀ;EFT൮൯൵ൿ扁qual;扄ullEqual;扇ilde;扉erticalBar;戤cr;쀀𝒩ilde耻Ñ䃑;䎝܀Eacdfgmoprstuvලෂ෉෕ෛ෠෧෼ขภยา฿ไlig;䅒cute耻Ó䃓Āiy෎ීrc耻Ô䃔;䐞blac;䅐r;쀀𝔒rave耻Ò䃒ƀaei෮ෲ෶cr;䅌ga;䎩cron;䎟pf;쀀𝕆enCurlyĀDQฎบoubleQuote;怜uote;怘;橔Āclวฬr;쀀𝒪ash耻Ø䃘iŬื฼de耻Õ䃕es;樷ml耻Ö䃖erĀBP๋๠Āar๐๓r;怾acĀek๚๜;揞et;掴arenthesis;揜Ҁacfhilors๿ງຊຏຒດຝະ໼rtialD;戂y;䐟r;쀀𝔓i;䎦;䎠usMinus;䂱Āipຢອncareplanåڝf;愙Ȁ;eio຺ູ໠໤檻cedesȀ;EST່້໏໚扺qual;檯lantEqual;扼ilde;找me;怳Ādp໩໮uct;戏ortionĀ;aȥ໹l;戝Āci༁༆r;쀀𝒫;䎨ȀUfos༑༖༛༟OT耻"䀢r;쀀𝔔pf;愚cr;쀀𝒬؀BEacefhiorsu༾གྷཇའཱིྦྷྪྭ႖ႩႴႾarr;椐G耻®䂮ƀcnrཎནབute;䅔g;柫rĀ;tཛྷཝ憠l;椖ƀaeyཧཬཱron;䅘dil;䅖;䐠Ā;vླྀཹ愜erseĀEUྂྙĀlq྇ྎement;戋uilibrium;懋pEquilibrium;楯r»ཹo;䎡ghtЀACDFTUVa࿁࿫࿳ဢဨၛႇϘĀnr࿆࿒gleBracket;柩rowƀ;BL࿜࿝࿡憒ar;懥eftArrow;懄eiling;按oǵ࿹\0စbleBracket;柧nǔည\0နeeVector;楝ectorĀ;Bဝသ懂ar;楕loor;挋Āerိ၃eƀ;AVဵံြ抢rrow;憦ector;楛iangleƀ;BEၐၑၕ抳ar;槐qual;抵pƀDTVၣၮၸownVector;楏eeVector;楜ectorĀ;Bႂႃ憾ar;楔ectorĀ;B႑႒懀ar;楓Āpuႛ႞f;愝ndImplies;楰ightarrow;懛ĀchႹႼr;愛;憱leDelayed;槴ڀHOacfhimoqstuფჱჷჽᄙᄞᅑᅖᅡᅧᆵᆻᆿĀCcჩხHcy;䐩y;䐨FTcy;䐬cute;䅚ʀ;aeiyᄈᄉᄎᄓᄗ檼ron;䅠dil;䅞rc;䅜;䐡r;쀀𝔖ortȀDLRUᄪᄴᄾᅉownArrow»ОeftArrow»࢚ightArrow»࿝pArrow;憑gma;䎣allCircle;战pf;쀀𝕊ɲᅭ\0\0ᅰt;戚areȀ;ISUᅻᅼᆉᆯ斡ntersection;抓uĀbpᆏᆞsetĀ;Eᆗᆘ抏qual;抑ersetĀ;Eᆨᆩ抐qual;抒nion;抔cr;쀀𝒮ar;拆ȀbcmpᇈᇛሉላĀ;sᇍᇎ拐etĀ;Eᇍᇕqual;抆ĀchᇠህeedsȀ;ESTᇭᇮᇴᇿ扻qual;檰lantEqual;扽ilde;承Tháྌ;我ƀ;esሒሓሣ拑rsetĀ;Eሜም抃qual;抇et»ሓրHRSacfhiorsሾቄ቉ቕ቞ቱቶኟዂወዑORN耻Þ䃞ADE;愢ĀHc቎ቒcy;䐋y;䐦Ābuቚቜ;䀉;䎤ƀaeyብቪቯron;䅤dil;䅢;䐢r;쀀𝔗Āeiቻ኉ǲኀ\0ኇefore;戴a;䎘Ācn኎ኘkSpace;쀀  Space;怉ldeȀ;EFTካኬኲኼ戼qual;扃ullEqual;扅ilde;扈pf;쀀𝕋ipleDot;惛Āctዖዛr;쀀𝒯rok;䅦ૡዷጎጚጦ\0ጬጱ\0\0\0\0\0ጸጽ፷ᎅ\0᏿ᐄᐊᐐĀcrዻጁute耻Ú䃚rĀ;oጇገ憟cir;楉rǣጓ\0጖y;䐎ve;䅬Āiyጞጣrc耻Û䃛;䐣blac;䅰r;쀀𝔘rave耻Ù䃙acr;䅪Ādiፁ፩erĀBPፈ፝Āarፍፐr;䁟acĀekፗፙ;揟et;掵arenthesis;揝onĀ;P፰፱拃lus;抎Āgp፻፿on;䅲f;쀀𝕌ЀADETadps᎕ᎮᎸᏄϨᏒᏗᏳrrowƀ;BDᅐᎠᎤar;椒ownArrow;懅ownArrow;憕quilibrium;楮eeĀ;AᏋᏌ报rrow;憥ownáϳerĀLRᏞᏨeftArrow;憖ightArrow;憗iĀ;lᏹᏺ䏒on;䎥ing;䅮cr;쀀𝒰ilde;䅨ml耻Ü䃜ҀDbcdefosvᐧᐬᐰᐳᐾᒅᒊᒐᒖash;披ar;櫫y;䐒ashĀ;lᐻᐼ抩;櫦Āerᑃᑅ;拁ƀbtyᑌᑐᑺar;怖Ā;iᑏᑕcalȀBLSTᑡᑥᑪᑴar;戣ine;䁼eparator;杘ilde;所ThinSpace;怊r;쀀𝔙pf;쀀𝕍cr;쀀𝒱dash;抪ʀcefosᒧᒬᒱᒶᒼirc;䅴dge;拀r;쀀𝔚pf;쀀𝕎cr;쀀𝒲Ȁfiosᓋᓐᓒᓘr;쀀𝔛;䎞pf;쀀𝕏cr;쀀𝒳ҀAIUacfosuᓱᓵᓹᓽᔄᔏᔔᔚᔠcy;䐯cy;䐇cy;䐮cute耻Ý䃝Āiyᔉᔍrc;䅶;䐫r;쀀𝔜pf;쀀𝕐cr;쀀𝒴ml;䅸ЀHacdefosᔵᔹᔿᕋᕏᕝᕠᕤcy;䐖cute;䅹Āayᕄᕉron;䅽;䐗ot;䅻ǲᕔ\0ᕛoWidtè૙a;䎖r;愨pf;愤cr;쀀𝒵௡ᖃᖊᖐ\0ᖰᖶᖿ\0\0\0\0ᗆᗛᗫᙟ᙭\0ᚕ᚛ᚲᚹ\0ᚾcute耻á䃡reve;䄃̀;Ediuyᖜᖝᖡᖣᖨᖭ戾;쀀∾̳;房rc耻â䃢te肻´̆;䐰lig耻æ䃦Ā;r²ᖺ;쀀𝔞rave耻à䃠ĀepᗊᗖĀfpᗏᗔsym;愵èᗓha;䎱ĀapᗟcĀclᗤᗧr;䄁g;樿ɤᗰ\0\0ᘊʀ;adsvᗺᗻᗿᘁᘇ戧nd;橕;橜lope;橘;橚΀;elmrszᘘᘙᘛᘞᘿᙏᙙ戠;榤e»ᘙsdĀ;aᘥᘦ戡ѡᘰᘲᘴᘶᘸᘺᘼᘾ;榨;榩;榪;榫;榬;榭;榮;榯tĀ;vᙅᙆ戟bĀ;dᙌᙍ抾;榝Āptᙔᙗh;戢»¹arr;捼Āgpᙣᙧon;䄅f;쀀𝕒΀;Eaeiop዁ᙻᙽᚂᚄᚇᚊ;橰cir;橯;扊d;手s;䀧roxĀ;e዁ᚒñᚃing耻å䃥ƀctyᚡᚦᚨr;쀀𝒶;䀪mpĀ;e዁ᚯñʈilde耻ã䃣ml耻ä䃤Āciᛂᛈoninôɲnt;樑ࠀNabcdefiklnoprsu᛭ᛱᜰ᜼ᝃᝈ᝸᝽០៦ᠹᡐᜍ᤽᥈ᥰot;櫭Ācrᛶ᜞kȀcepsᜀᜅᜍᜓong;扌psilon;䏶rime;怵imĀ;e᜚᜛戽q;拍Ŷᜢᜦee;抽edĀ;gᜬᜭ挅e»ᜭrkĀ;t፜᜷brk;掶Āoyᜁᝁ;䐱quo;怞ʀcmprtᝓ᝛ᝡᝤᝨausĀ;eĊĉptyv;榰séᜌnoõēƀahwᝯ᝱ᝳ;䎲;愶een;扬r;쀀𝔟g΀costuvwឍឝឳេ៕៛៞ƀaiuបពរðݠrc;旯p»፱ƀdptឤឨឭot;樀lus;樁imes;樂ɱឹ\0\0ើcup;樆ar;昅riangleĀdu៍្own;施p;斳plus;樄eåᑄåᒭarow;植ƀako៭ᠦᠵĀcn៲ᠣkƀlst៺֫᠂ozenge;槫riangleȀ;dlr᠒᠓᠘᠝斴own;斾eft;旂ight;斸k;搣Ʊᠫ\0ᠳƲᠯ\0ᠱ;斒;斑4;斓ck;斈ĀeoᠾᡍĀ;qᡃᡆ쀀=⃥uiv;쀀≡⃥t;挐Ȁptwxᡙᡞᡧᡬf;쀀𝕓Ā;tᏋᡣom»Ꮜtie;拈؀DHUVbdhmptuvᢅᢖᢪᢻᣗᣛᣬ᣿ᤅᤊᤐᤡȀLRlrᢎᢐᢒᢔ;敗;敔;敖;敓ʀ;DUduᢡᢢᢤᢦᢨ敐;敦;敩;敤;敧ȀLRlrᢳᢵᢷᢹ;敝;敚;敜;教΀;HLRhlrᣊᣋᣍᣏᣑᣓᣕ救;敬;散;敠;敫;敢;敟ox;槉ȀLRlrᣤᣦᣨᣪ;敕;敒;攐;攌ʀ;DUduڽ᣷᣹᣻᣽;敥;敨;攬;攴inus;抟lus;択imes;抠ȀLRlrᤙᤛᤝ᤟;敛;敘;攘;攔΀;HLRhlrᤰᤱᤳᤵᤷ᤻᤹攂;敪;敡;敞;攼;攤;攜Āevģ᥂bar耻¦䂦Ȁceioᥑᥖᥚᥠr;쀀𝒷mi;恏mĀ;e᜚᜜lƀ;bhᥨᥩᥫ䁜;槅sub;柈Ŭᥴ᥾lĀ;e᥹᥺怢t»᥺pƀ;Eeįᦅᦇ;檮Ā;qۜۛೡᦧ\0᧨ᨑᨕᨲ\0ᨷᩐ\0\0᪴\0\0᫁\0\0ᬡᬮ᭍᭒\0᯽\0ᰌƀcpr᦭ᦲ᧝ute;䄇̀;abcdsᦿᧀᧄ᧊᧕᧙戩nd;橄rcup;橉Āau᧏᧒p;橋p;橇ot;橀;쀀∩︀Āeo᧢᧥t;恁îړȀaeiu᧰᧻ᨁᨅǰ᧵\0᧸s;橍on;䄍dil耻ç䃧rc;䄉psĀ;sᨌᨍ橌m;橐ot;䄋ƀdmnᨛᨠᨦil肻¸ƭptyv;榲t脀¢;eᨭᨮ䂢räƲr;쀀𝔠ƀceiᨽᩀᩍy;䑇ckĀ;mᩇᩈ朓ark»ᩈ;䏇r΀;Ecefms᩟᩠ᩢᩫ᪤᪪᪮旋;槃ƀ;elᩩᩪᩭ䋆q;扗eɡᩴ\0\0᪈rrowĀlr᩼᪁eft;憺ight;憻ʀRSacd᪒᪔᪖᪚᪟»ཇ;擈st;抛irc;抚ash;抝nint;樐id;櫯cir;槂ubsĀ;u᪻᪼晣it»᪼ˬ᫇᫔᫺\0ᬊonĀ;eᫍᫎ䀺Ā;qÇÆɭ᫙\0\0᫢aĀ;t᫞᫟䀬;䁀ƀ;fl᫨᫩᫫戁îᅠeĀmx᫱᫶ent»᫩eóɍǧ᫾\0ᬇĀ;dኻᬂot;橭nôɆƀfryᬐᬔᬗ;쀀𝕔oäɔ脀©;sŕᬝr;愗Āaoᬥᬩrr;憵ss;朗Ācuᬲᬷr;쀀𝒸Ābpᬼ᭄Ā;eᭁᭂ櫏;櫑Ā;eᭉᭊ櫐;櫒dot;拯΀delprvw᭠᭬᭷ᮂᮬᯔ᯹arrĀlr᭨᭪;椸;椵ɰ᭲\0\0᭵r;拞c;拟arrĀ;p᭿ᮀ憶;椽̀;bcdosᮏᮐᮖᮡᮥᮨ截rcap;橈Āauᮛᮞp;橆p;橊ot;抍r;橅;쀀∪︀Ȁalrv᮵ᮿᯞᯣrrĀ;mᮼᮽ憷;椼yƀevwᯇᯔᯘqɰᯎ\0\0ᯒreã᭳uã᭵ee;拎edge;拏en耻¤䂤earrowĀlrᯮ᯳eft»ᮀight»ᮽeäᯝĀciᰁᰇoninôǷnt;戱lcty;挭ঀAHabcdefhijlorstuwz᰸᰻᰿ᱝᱩᱵᲊᲞᲬᲷ᳻᳿ᴍᵻᶑᶫᶻ᷆᷍rò΁ar;楥Ȁglrs᱈ᱍ᱒᱔ger;怠eth;愸òᄳhĀ;vᱚᱛ怐»ऊūᱡᱧarow;椏aã̕Āayᱮᱳron;䄏;䐴ƀ;ao̲ᱼᲄĀgrʿᲁr;懊tseq;橷ƀglmᲑᲔᲘ耻°䂰ta;䎴ptyv;榱ĀirᲣᲨsht;楿;쀀𝔡arĀlrᲳᲵ»ࣜ»သʀaegsv᳂͸᳖᳜᳠mƀ;oș᳊᳔ndĀ;ș᳑uit;晦amma;䏝in;拲ƀ;io᳧᳨᳸䃷de脀÷;o᳧ᳰntimes;拇nø᳷cy;䑒cɯᴆ\0\0ᴊrn;挞op;挍ʀlptuwᴘᴝᴢᵉᵕlar;䀤f;쀀𝕕ʀ;emps̋ᴭᴷᴽᵂqĀ;d͒ᴳot;扑inus;戸lus;戔quare;抡blebarwedgåúnƀadhᄮᵝᵧownarrowóᲃarpoonĀlrᵲᵶefôᲴighôᲶŢᵿᶅkaro÷གɯᶊ\0\0ᶎrn;挟op;挌ƀcotᶘᶣᶦĀryᶝᶡ;쀀𝒹;䑕l;槶rok;䄑Ādrᶰᶴot;拱iĀ;fᶺ᠖斿Āah᷀᷃ròЩaòྦangle;榦Āci᷒ᷕy;䑟grarr;柿ऀDacdefglmnopqrstuxḁḉḙḸոḼṉṡṾấắẽỡἪἷὄ὎὚ĀDoḆᴴoôᲉĀcsḎḔute耻é䃩ter;橮ȀaioyḢḧḱḶron;䄛rĀ;cḭḮ扖耻ê䃪lon;払;䑍ot;䄗ĀDrṁṅot;扒;쀀𝔢ƀ;rsṐṑṗ檚ave耻è䃨Ā;dṜṝ檖ot;檘Ȁ;ilsṪṫṲṴ檙nters;揧;愓Ā;dṹṺ檕ot;檗ƀapsẅẉẗcr;䄓tyƀ;svẒẓẕ戅et»ẓpĀ1;ẝẤĳạả;怄;怅怃ĀgsẪẬ;䅋p;怂ĀgpẴẸon;䄙f;쀀𝕖ƀalsỄỎỒrĀ;sỊị拕l;槣us;橱iƀ;lvỚớở䎵on»ớ;䏵ȀcsuvỪỳἋἣĀioữḱrc»Ḯɩỹ\0\0ỻíՈantĀglἂἆtr»ṝess»Ṻƀaeiἒ἖Ἒls;䀽st;扟vĀ;DȵἠD;橸parsl;槥ĀDaἯἳot;打rr;楱ƀcdiἾὁỸr;愯oô͒ĀahὉὋ;䎷耻ð䃰Āmrὓὗl耻ë䃫o;悬ƀcipὡὤὧl;䀡sôծĀeoὬὴctatioîՙnentialåչৡᾒ\0ᾞ\0ᾡᾧ\0\0ῆῌ\0ΐ\0ῦῪ \0 ⁚llingdotseñṄy;䑄male;晀ƀilrᾭᾳ῁lig;耀ﬃɩᾹ\0\0᾽g;耀ﬀig;耀ﬄ;쀀𝔣lig;耀ﬁlig;쀀fjƀaltῙ῜ῡt;晭ig;耀ﬂns;斱of;䆒ǰ΅\0ῳf;쀀𝕗ĀakֿῷĀ;vῼ´拔;櫙artint;樍Āao‌⁕Ācs‑⁒α‚‰‸⁅⁈\0⁐β•‥‧‪‬\0‮耻½䂽;慓耻¼䂼;慕;慙;慛Ƴ‴\0‶;慔;慖ʴ‾⁁\0\0⁃耻¾䂾;慗;慜5;慘ƶ⁌\0⁎;慚;慝8;慞l;恄wn;挢cr;쀀𝒻ࢀEabcdefgijlnorstv₂₉₟₥₰₴⃰⃵⃺⃿℃ℒℸ̗ℾ⅒↞Ā;lٍ₇;檌ƀcmpₐₕ₝ute;䇵maĀ;dₜ᳚䎳;檆reve;䄟Āiy₪₮rc;䄝;䐳ot;䄡Ȁ;lqsؾق₽⃉ƀ;qsؾٌ⃄lanô٥Ȁ;cdl٥⃒⃥⃕c;檩otĀ;o⃜⃝檀Ā;l⃢⃣檂;檄Ā;e⃪⃭쀀⋛︀s;檔r;쀀𝔤Ā;gٳ؛mel;愷cy;䑓Ȁ;Eajٚℌℎℐ;檒;檥;檤ȀEaesℛℝ℩ℴ;扩pĀ;p℣ℤ檊rox»ℤĀ;q℮ℯ檈Ā;q℮ℛim;拧pf;쀀𝕘Āci⅃ⅆr;愊mƀ;el٫ⅎ⅐;檎;檐茀>;cdlqr׮ⅠⅪⅮⅳⅹĀciⅥⅧ;檧r;橺ot;拗Par;榕uest;橼ʀadelsↄⅪ←ٖ↛ǰ↉\0↎proø₞r;楸qĀlqؿ↖lesó₈ií٫Āen↣↭rtneqq;쀀≩︀Å↪ԀAabcefkosy⇄⇇⇱⇵⇺∘∝∯≨≽ròΠȀilmr⇐⇔⇗⇛rsðᒄf»․ilôکĀdr⇠⇤cy;䑊ƀ;cwࣴ⇫⇯ir;楈;憭ar;意irc;䄥ƀalr∁∎∓rtsĀ;u∉∊晥it»∊lip;怦con;抹r;쀀𝔥sĀew∣∩arow;椥arow;椦ʀamopr∺∾≃≞≣rr;懿tht;戻kĀlr≉≓eftarrow;憩ightarrow;憪f;쀀𝕙bar;怕ƀclt≯≴≸r;쀀𝒽asè⇴rok;䄧Ābp⊂⊇ull;恃hen»ᱛૡ⊣\0⊪\0⊸⋅⋎\0⋕⋳\0\0⋸⌢⍧⍢⍿\0⎆⎪⎴cute耻í䃭ƀ;iyݱ⊰⊵rc耻î䃮;䐸Ācx⊼⊿y;䐵cl耻¡䂡ĀfrΟ⋉;쀀𝔦rave耻ì䃬Ȁ;inoܾ⋝⋩⋮Āin⋢⋦nt;樌t;戭fin;槜ta;愩lig;䄳ƀaop⋾⌚⌝ƀcgt⌅⌈⌗r;䄫ƀelpܟ⌏⌓inåގarôܠh;䄱f;抷ed;䆵ʀ;cfotӴ⌬⌱⌽⍁are;愅inĀ;t⌸⌹戞ie;槝doô⌙ʀ;celpݗ⍌⍐⍛⍡al;抺Āgr⍕⍙eróᕣã⍍arhk;樗rod;樼Ȁcgpt⍯⍲⍶⍻y;䑑on;䄯f;쀀𝕚a;䎹uest耻¿䂿Āci⎊⎏r;쀀𝒾nʀ;EdsvӴ⎛⎝⎡ӳ;拹ot;拵Ā;v⎦⎧拴;拳Ā;iݷ⎮lde;䄩ǫ⎸\0⎼cy;䑖l耻ï䃯̀cfmosu⏌⏗⏜⏡⏧⏵Āiy⏑⏕rc;䄵;䐹r;쀀𝔧ath;䈷pf;쀀𝕛ǣ⏬\0⏱r;쀀𝒿rcy;䑘kcy;䑔Ѐacfghjos␋␖␢␧␭␱␵␻ppaĀ;v␓␔䎺;䏰Āey␛␠dil;䄷;䐺r;쀀𝔨reen;䄸cy;䑅cy;䑜pf;쀀𝕜cr;쀀𝓀஀ABEHabcdefghjlmnoprstuv⑰⒁⒆⒍⒑┎┽╚▀♎♞♥♹♽⚚⚲⛘❝❨➋⟀⠁⠒ƀart⑷⑺⑼rò৆òΕail;椛arr;椎Ā;gঔ⒋;檋ar;楢ॣ⒥\0⒪\0⒱\0\0\0\0\0⒵Ⓔ\0ⓆⓈⓍ\0⓹ute;䄺mptyv;榴raîࡌbda;䎻gƀ;dlࢎⓁⓃ;榑åࢎ;檅uo耻«䂫rЀ;bfhlpst࢙ⓞⓦⓩ⓫⓮⓱⓵Ā;f࢝ⓣs;椟s;椝ë≒p;憫l;椹im;楳l;憢ƀ;ae⓿─┄檫il;椙Ā;s┉┊檭;쀀⪭︀ƀabr┕┙┝rr;椌rk;杲Āak┢┬cĀek┨┪;䁻;䁛Āes┱┳;榋lĀdu┹┻;榏;榍Ȁaeuy╆╋╖╘ron;䄾Ādi═╔il;䄼ìࢰâ┩;䐻Ȁcqrs╣╦╭╽a;椶uoĀ;rนᝆĀdu╲╷har;楧shar;楋h;憲ʀ;fgqs▋▌উ◳◿扤tʀahlrt▘▤▷◂◨rrowĀ;t࢙□aé⓶arpoonĀdu▯▴own»њp»०eftarrows;懇ightƀahs◍◖◞rrowĀ;sࣴࢧarpoonó྘quigarro÷⇰hreetimes;拋ƀ;qs▋ও◺lanôবʀ;cdgsব☊☍☝☨c;檨otĀ;o☔☕橿Ā;r☚☛檁;檃Ā;e☢☥쀀⋚︀s;檓ʀadegs☳☹☽♉♋pproøⓆot;拖qĀgq♃♅ôউgtò⒌ôছiíলƀilr♕࣡♚sht;楼;쀀𝔩Ā;Eজ♣;檑š♩♶rĀdu▲♮Ā;l॥♳;楪lk;斄cy;䑙ʀ;achtੈ⚈⚋⚑⚖rò◁orneòᴈard;楫ri;旺Āio⚟⚤dot;䅀ustĀ;a⚬⚭掰che»⚭ȀEaes⚻⚽⛉⛔;扨pĀ;p⛃⛄檉rox»⛄Ā;q⛎⛏檇Ā;q⛎⚻im;拦Ѐabnoptwz⛩⛴⛷✚✯❁❇❐Ānr⛮⛱g;柬r;懽rëࣁgƀlmr⛿✍✔eftĀar০✇ightá৲apsto;柼ightá৽parrowĀlr✥✩efô⓭ight;憬ƀafl✶✹✽r;榅;쀀𝕝us;樭imes;樴š❋❏st;戗áፎƀ;ef❗❘᠀旊nge»❘arĀ;l❤❥䀨t;榓ʀachmt❳❶❼➅➇ròࢨorneòᶌarĀ;d྘➃;業;怎ri;抿̀achiqt➘➝ੀ➢➮➻quo;怹r;쀀𝓁mƀ;egল➪➬;檍;檏Ābu┪➳oĀ;rฟ➹;怚rok;䅂萀<;cdhilqrࠫ⟒☹⟜⟠⟥⟪⟰Āci⟗⟙;檦r;橹reå◲mes;拉arr;楶uest;橻ĀPi⟵⟹ar;榖ƀ;ef⠀भ᠛旃rĀdu⠇⠍shar;楊har;楦Āen⠗⠡rtneqq;쀀≨︀Å⠞܀Dacdefhilnopsu⡀⡅⢂⢎⢓⢠⢥⢨⣚⣢⣤ઃ⣳⤂Dot;戺Ȁclpr⡎⡒⡣⡽r耻¯䂯Āet⡗⡙;時Ā;e⡞⡟朠se»⡟Ā;sျ⡨toȀ;dluျ⡳⡷⡻owîҌefôएðᏑker;斮Āoy⢇⢌mma;権;䐼ash;怔asuredangle»ᘦr;쀀𝔪o;愧ƀcdn⢯⢴⣉ro耻µ䂵Ȁ;acdᑤ⢽⣀⣄sôᚧir;櫰ot肻·Ƶusƀ;bd⣒ᤃ⣓戒Ā;uᴼ⣘;横ţ⣞⣡p;櫛ò−ðઁĀdp⣩⣮els;抧f;쀀𝕞Āct⣸⣽r;쀀𝓂pos»ᖝƀ;lm⤉⤊⤍䎼timap;抸ఀGLRVabcdefghijlmoprstuvw⥂⥓⥾⦉⦘⧚⧩⨕⨚⩘⩝⪃⪕⪤⪨⬄⬇⭄⭿⮮ⰴⱧⱼ⳩Āgt⥇⥋;쀀⋙̸Ā;v⥐௏쀀≫⃒ƀelt⥚⥲⥶ftĀar⥡⥧rrow;懍ightarrow;懎;쀀⋘̸Ā;v⥻ే쀀≪⃒ightarrow;懏ĀDd⦎⦓ash;抯ash;抮ʀbcnpt⦣⦧⦬⦱⧌la»˞ute;䅄g;쀀∠⃒ʀ;Eiop඄⦼⧀⧅⧈;쀀⩰̸d;쀀≋̸s;䅉roø඄urĀ;a⧓⧔普lĀ;s⧓ସǳ⧟\0⧣p肻\xA0ଷmpĀ;e௹ఀʀaeouy⧴⧾⨃⨐⨓ǰ⧹\0⧻;橃on;䅈dil;䅆ngĀ;dൾ⨊ot;쀀⩭̸p;橂;䐽ash;怓΀;Aadqsxஒ⨩⨭⨻⩁⩅⩐rr;懗rĀhr⨳⨶k;椤Ā;oᏲᏰot;쀀≐̸uiöୣĀei⩊⩎ar;椨í஘istĀ;s஠டr;쀀𝔫ȀEest௅⩦⩹⩼ƀ;qs஼⩭௡ƀ;qs஼௅⩴lanô௢ií௪Ā;rஶ⪁»ஷƀAap⪊⪍⪑rò⥱rr;憮ar;櫲ƀ;svྍ⪜ྌĀ;d⪡⪢拼;拺cy;䑚΀AEadest⪷⪺⪾⫂⫅⫶⫹rò⥦;쀀≦̸rr;憚r;急Ȁ;fqs఻⫎⫣⫯tĀar⫔⫙rro÷⫁ightarro÷⪐ƀ;qs఻⪺⫪lanôౕĀ;sౕ⫴»శiíౝĀ;rవ⫾iĀ;eచథiäඐĀpt⬌⬑f;쀀𝕟膀¬;in⬙⬚⬶䂬nȀ;Edvஉ⬤⬨⬮;쀀⋹̸ot;쀀⋵̸ǡஉ⬳⬵;拷;拶iĀ;vಸ⬼ǡಸ⭁⭃;拾;拽ƀaor⭋⭣⭩rȀ;ast୻⭕⭚⭟lleì୻l;쀀⫽⃥;쀀∂̸lint;樔ƀ;ceಒ⭰⭳uåಥĀ;cಘ⭸Ā;eಒ⭽ñಘȀAait⮈⮋⮝⮧rò⦈rrƀ;cw⮔⮕⮙憛;쀀⤳̸;쀀↝̸ghtarrow»⮕riĀ;eೋೖ΀chimpqu⮽⯍⯙⬄୸⯤⯯Ȁ;cerല⯆ഷ⯉uå൅;쀀𝓃ortɭ⬅\0\0⯖ará⭖mĀ;e൮⯟Ā;q൴൳suĀbp⯫⯭å೸åഋƀbcp⯶ⰑⰙȀ;Ees⯿ⰀഢⰄ抄;쀀⫅̸etĀ;eഛⰋqĀ;qണⰀcĀ;eലⰗñസȀ;EesⰢⰣൟⰧ抅;쀀⫆̸etĀ;e൘ⰮqĀ;qൠⰣȀgilrⰽⰿⱅⱇìௗlde耻ñ䃱çృiangleĀlrⱒⱜeftĀ;eచⱚñదightĀ;eೋⱥñ೗Ā;mⱬⱭ䎽ƀ;esⱴⱵⱹ䀣ro;愖p;怇ҀDHadgilrsⲏⲔⲙⲞⲣⲰⲶⳓⳣash;抭arr;椄p;쀀≍⃒ash;抬ĀetⲨⲬ;쀀≥⃒;쀀>⃒nfin;槞ƀAetⲽⳁⳅrr;椂;쀀≤⃒Ā;rⳊⳍ쀀<⃒ie;쀀⊴⃒ĀAtⳘⳜrr;椃rie;쀀⊵⃒im;쀀∼⃒ƀAan⳰⳴ⴂrr;懖rĀhr⳺⳽k;椣Ā;oᏧᏥear;椧ቓ᪕\0\0\0\0\0\0\0\0\0\0\0\0\0ⴭ\0ⴸⵈⵠⵥ⵲ⶄᬇ\0\0ⶍⶫ\0ⷈⷎ\0ⷜ⸙⸫⸾⹃Ācsⴱ᪗ute耻ó䃳ĀiyⴼⵅrĀ;c᪞ⵂ耻ô䃴;䐾ʀabios᪠ⵒⵗǈⵚlac;䅑v;樸old;榼lig;䅓Ācr⵩⵭ir;榿;쀀𝔬ͯ⵹\0\0⵼\0ⶂn;䋛ave耻ò䃲;槁Ābmⶈ෴ar;榵Ȁacitⶕ⶘ⶥⶨrò᪀Āir⶝ⶠr;榾oss;榻nå๒;槀ƀaeiⶱⶵⶹcr;䅍ga;䏉ƀcdnⷀⷅǍron;䎿;榶pf;쀀𝕠ƀaelⷔ⷗ǒr;榷rp;榹΀;adiosvⷪⷫⷮ⸈⸍⸐⸖戨rò᪆Ȁ;efmⷷⷸ⸂⸅橝rĀ;oⷾⷿ愴f»ⷿ耻ª䂪耻º䂺gof;抶r;橖lope;橗;橛ƀclo⸟⸡⸧ò⸁ash耻ø䃸l;折iŬⸯ⸴de耻õ䃵esĀ;aǛ⸺s;樶ml耻ö䃶bar;挽ૡ⹞\0⹽\0⺀⺝\0⺢⺹\0\0⻋ຜ\0⼓\0\0⼫⾼\0⿈rȀ;astЃ⹧⹲຅脀¶;l⹭⹮䂶leìЃɩ⹸\0\0⹻m;櫳;櫽y;䐿rʀcimpt⺋⺏⺓ᡥ⺗nt;䀥od;䀮il;怰enk;怱r;쀀𝔭ƀimo⺨⺰⺴Ā;v⺭⺮䏆;䏕maô੶ne;明ƀ;tv⺿⻀⻈䏀chfork»´;䏖Āau⻏⻟nĀck⻕⻝kĀ;h⇴⻛;愎ö⇴sҀ;abcdemst⻳⻴ᤈ⻹⻽⼄⼆⼊⼎䀫cir;樣ir;樢Āouᵀ⼂;樥;橲n肻±ຝim;樦wo;樧ƀipu⼙⼠⼥ntint;樕f;쀀𝕡nd耻£䂣Ԁ;Eaceinosu່⼿⽁⽄⽇⾁⾉⾒⽾⾶;檳p;檷uå໙Ā;c໎⽌̀;acens່⽙⽟⽦⽨⽾pproø⽃urlyeñ໙ñ໎ƀaes⽯⽶⽺pprox;檹qq;檵im;拨iíໟmeĀ;s⾈ຮ怲ƀEas⽸⾐⽺ð⽵ƀdfp໬⾙⾯ƀals⾠⾥⾪lar;挮ine;挒urf;挓Ā;t໻⾴ï໻rel;抰Āci⿀⿅r;쀀𝓅;䏈ncsp;怈̀fiopsu⿚⋢⿟⿥⿫⿱r;쀀𝔮pf;쀀𝕢rime;恗cr;쀀𝓆ƀaeo⿸〉〓tĀei⿾々rnionóڰnt;樖stĀ;e【】䀿ñἙô༔઀ABHabcdefhilmnoprstux぀けさすムㄎㄫㅇㅢㅲㆎ㈆㈕㈤㈩㉘㉮㉲㊐㊰㊷ƀartぇおがròႳòϝail;検aròᱥar;楤΀cdenqrtとふへみわゔヌĀeuねぱ;쀀∽̱te;䅕iãᅮmptyv;榳gȀ;del࿑らるろ;榒;榥å࿑uo耻»䂻rր;abcfhlpstw࿜ガクシスゼゾダッデナp;極Ā;f࿠ゴs;椠;椳s;椞ë≝ð✮l;楅im;楴l;憣;憝Āaiパフil;椚oĀ;nホボ戶aló༞ƀabrョリヮrò៥rk;杳ĀakンヽcĀekヹ・;䁽;䁝Āes㄂㄄;榌lĀduㄊㄌ;榎;榐Ȁaeuyㄗㄜㄧㄩron;䅙Ādiㄡㄥil;䅗ì࿲âヺ;䑀Ȁclqsㄴㄷㄽㅄa;椷dhar;楩uoĀ;rȎȍh;憳ƀacgㅎㅟངlȀ;ipsླྀㅘㅛႜnåႻarôྩt;断ƀilrㅩဣㅮsht;楽;쀀𝔯ĀaoㅷㆆrĀduㅽㅿ»ѻĀ;l႑ㆄ;楬Ā;vㆋㆌ䏁;䏱ƀgns㆕ㇹㇼht̀ahlrstㆤㆰ㇂㇘㇤㇮rrowĀ;t࿜ㆭaéトarpoonĀduㆻㆿowîㅾp»႒eftĀah㇊㇐rrowó࿪arpoonóՑightarrows;應quigarro÷ニhreetimes;拌g;䋚ingdotseñἲƀahm㈍㈐㈓rò࿪aòՑ;怏oustĀ;a㈞㈟掱che»㈟mid;櫮Ȁabpt㈲㈽㉀㉒Ānr㈷㈺g;柭r;懾rëဃƀafl㉇㉊㉎r;榆;쀀𝕣us;樮imes;樵Āap㉝㉧rĀ;g㉣㉤䀩t;榔olint;樒arò㇣Ȁachq㉻㊀Ⴜ㊅quo;怺r;쀀𝓇Ābu・㊊oĀ;rȔȓƀhir㊗㊛㊠reåㇸmes;拊iȀ;efl㊪ၙᠡ㊫方tri;槎luhar;楨;愞ൡ㋕㋛㋟㌬㌸㍱\0㍺㎤\0\0㏬㏰\0㐨㑈㑚㒭㒱㓊㓱\0㘖\0\0㘳cute;䅛quï➺Ԁ;Eaceinpsyᇭ㋳㋵㋿㌂㌋㌏㌟㌦㌩;檴ǰ㋺\0㋼;檸on;䅡uåᇾĀ;dᇳ㌇il;䅟rc;䅝ƀEas㌖㌘㌛;檶p;檺im;择olint;樓iíሄ;䑁otƀ;be㌴ᵇ㌵担;橦΀Aacmstx㍆㍊㍗㍛㍞㍣㍭rr;懘rĀhr㍐㍒ë∨Ā;oਸ਼਴t耻§䂧i;䀻war;椩mĀin㍩ðnuóñt;朶rĀ;o㍶⁕쀀𝔰Ȁacoy㎂㎆㎑㎠rp;景Āhy㎋㎏cy;䑉;䑈rtɭ㎙\0\0㎜iäᑤaraì⹯耻­䂭Āgm㎨㎴maƀ;fv㎱㎲㎲䏃;䏂Ѐ;deglnprካ㏅㏉㏎㏖㏞㏡㏦ot;橪Ā;q኱ኰĀ;E㏓㏔檞;檠Ā;E㏛㏜檝;檟e;扆lus;樤arr;楲aròᄽȀaeit㏸㐈㐏㐗Āls㏽㐄lsetmé㍪hp;樳parsl;槤Ādlᑣ㐔e;挣Ā;e㐜㐝檪Ā;s㐢㐣檬;쀀⪬︀ƀflp㐮㐳㑂tcy;䑌Ā;b㐸㐹䀯Ā;a㐾㐿槄r;挿f;쀀𝕤aĀdr㑍ЂesĀ;u㑔㑕晠it»㑕ƀcsu㑠㑹㒟Āau㑥㑯pĀ;sᆈ㑫;쀀⊓︀pĀ;sᆴ㑵;쀀⊔︀uĀbp㑿㒏ƀ;esᆗᆜ㒆etĀ;eᆗ㒍ñᆝƀ;esᆨᆭ㒖etĀ;eᆨ㒝ñᆮƀ;afᅻ㒦ְrť㒫ֱ»ᅼaròᅈȀcemt㒹㒾㓂㓅r;쀀𝓈tmîñiì㐕aræᆾĀar㓎㓕rĀ;f㓔ឿ昆Āan㓚㓭ightĀep㓣㓪psiloîỠhé⺯s»⡒ʀbcmnp㓻㕞ሉ㖋㖎Ҁ;Edemnprs㔎㔏㔑㔕㔞㔣㔬㔱㔶抂;櫅ot;檽Ā;dᇚ㔚ot;櫃ult;櫁ĀEe㔨㔪;櫋;把lus;檿arr;楹ƀeiu㔽㕒㕕tƀ;en㔎㕅㕋qĀ;qᇚ㔏eqĀ;q㔫㔨m;櫇Ābp㕚㕜;櫕;櫓c̀;acensᇭ㕬㕲㕹㕻㌦pproø㋺urlyeñᇾñᇳƀaes㖂㖈㌛pproø㌚qñ㌗g;晪ڀ123;Edehlmnps㖩㖬㖯ሜ㖲㖴㗀㗉㗕㗚㗟㗨㗭耻¹䂹耻²䂲耻³䂳;櫆Āos㖹㖼t;檾ub;櫘Ā;dሢ㗅ot;櫄sĀou㗏㗒l;柉b;櫗arr;楻ult;櫂ĀEe㗤㗦;櫌;抋lus;櫀ƀeiu㗴㘉㘌tƀ;enሜ㗼㘂qĀ;qሢ㖲eqĀ;q㗧㗤m;櫈Ābp㘑㘓;櫔;櫖ƀAan㘜㘠㘭rr;懙rĀhr㘦㘨ë∮Ā;oਫ਩war;椪lig耻ß䃟௡㙑㙝㙠ዎ㙳㙹\0㙾㛂\0\0\0\0\0㛛㜃\0㜉㝬\0\0\0㞇ɲ㙖\0\0㙛get;挖;䏄rë๟ƀaey㙦㙫㙰ron;䅥dil;䅣;䑂lrec;挕r;쀀𝔱Ȁeiko㚆㚝㚵㚼ǲ㚋\0㚑eĀ4fኄኁaƀ;sv㚘㚙㚛䎸ym;䏑Ācn㚢㚲kĀas㚨㚮pproø዁im»ኬsðኞĀas㚺㚮ð዁rn耻þ䃾Ǭ̟㛆⋧es膀×;bd㛏㛐㛘䃗Ā;aᤏ㛕r;樱;樰ƀeps㛡㛣㜀á⩍Ȁ;bcf҆㛬㛰㛴ot;挶ir;櫱Ā;o㛹㛼쀀𝕥rk;櫚á㍢rime;怴ƀaip㜏㜒㝤dåቈ΀adempst㜡㝍㝀㝑㝗㝜㝟ngleʀ;dlqr㜰㜱㜶㝀㝂斵own»ᶻeftĀ;e⠀㜾ñम;扜ightĀ;e㊪㝋ñၚot;旬inus;樺lus;樹b;槍ime;樻ezium;揢ƀcht㝲㝽㞁Āry㝷㝻;쀀𝓉;䑆cy;䑛rok;䅧Āio㞋㞎xô᝷headĀlr㞗㞠eftarro÷ࡏightarrow»ཝऀAHabcdfghlmoprstuw㟐㟓㟗㟤㟰㟼㠎㠜㠣㠴㡑㡝㡫㢩㣌㣒㣪㣶ròϭar;楣Ācr㟜㟢ute耻ú䃺òᅐrǣ㟪\0㟭y;䑞ve;䅭Āiy㟵㟺rc耻û䃻;䑃ƀabh㠃㠆㠋ròᎭlac;䅱aòᏃĀir㠓㠘sht;楾;쀀𝔲rave耻ù䃹š㠧㠱rĀlr㠬㠮»ॗ»ႃlk;斀Āct㠹㡍ɯ㠿\0\0㡊rnĀ;e㡅㡆挜r»㡆op;挏ri;旸Āal㡖㡚cr;䅫肻¨͉Āgp㡢㡦on;䅳f;쀀𝕦̀adhlsuᅋ㡸㡽፲㢑㢠ownáᎳarpoonĀlr㢈㢌efô㠭ighô㠯iƀ;hl㢙㢚㢜䏅»ᏺon»㢚parrows;懈ƀcit㢰㣄㣈ɯ㢶\0\0㣁rnĀ;e㢼㢽挝r»㢽op;挎ng;䅯ri;旹cr;쀀𝓊ƀdir㣙㣝㣢ot;拰lde;䅩iĀ;f㜰㣨»᠓Āam㣯㣲rò㢨l耻ü䃼angle;榧ހABDacdeflnoprsz㤜㤟㤩㤭㦵㦸㦽㧟㧤㧨㧳㧹㧽㨁㨠ròϷarĀ;v㤦㤧櫨;櫩asèϡĀnr㤲㤷grt;榜΀eknprst㓣㥆㥋㥒㥝㥤㦖appá␕othinçẖƀhir㓫⻈㥙opô⾵Ā;hᎷ㥢ïㆍĀiu㥩㥭gmá㎳Ābp㥲㦄setneqĀ;q㥽㦀쀀⊊︀;쀀⫋︀setneqĀ;q㦏㦒쀀⊋︀;쀀⫌︀Āhr㦛㦟etá㚜iangleĀlr㦪㦯eft»थight»ၑy;䐲ash»ံƀelr㧄㧒㧗ƀ;beⷪ㧋㧏ar;抻q;扚lip;拮Ābt㧜ᑨaòᑩr;쀀𝔳tré㦮suĀbp㧯㧱»ജ»൙pf;쀀𝕧roð໻tré㦴Ācu㨆㨋r;쀀𝓋Ābp㨐㨘nĀEe㦀㨖»㥾nĀEe㦒㨞»㦐igzag;榚΀cefoprs㨶㨻㩖㩛㩔㩡㩪irc;䅵Ādi㩀㩑Ābg㩅㩉ar;機eĀ;qᗺ㩏;扙erp;愘r;쀀𝔴pf;쀀𝕨Ā;eᑹ㩦atèᑹcr;쀀𝓌ૣណ㪇\0㪋\0㪐㪛\0\0㪝㪨㪫㪯\0\0㫃㫎\0㫘ៜ៟tré៑r;쀀𝔵ĀAa㪔㪗ròσrò৶;䎾ĀAa㪡㪤ròθrò৫að✓is;拻ƀdptឤ㪵㪾Āfl㪺ឩ;쀀𝕩imåឲĀAa㫇㫊ròώròਁĀcq㫒ីr;쀀𝓍Āpt៖㫜ré។Ѐacefiosu㫰㫽㬈㬌㬑㬕㬛㬡cĀuy㫶㫻te耻ý䃽;䑏Āiy㬂㬆rc;䅷;䑋n耻¥䂥r;쀀𝔶cy;䑗pf;쀀𝕪cr;쀀𝓎Ācm㬦㬩y;䑎l耻ÿ䃿Ԁacdefhiosw㭂㭈㭔㭘㭤㭩㭭㭴㭺㮀cute;䅺Āay㭍㭒ron;䅾;䐷ot;䅼Āet㭝㭡træᕟa;䎶r;쀀𝔷cy;䐶grarr;懝pf;쀀𝕫cr;쀀𝓏Ājn㮅㮇;怍j;怌`.split(``).map(e=>e.charCodeAt(0))),Fu=new Uint16Array(`Ȁaglq	\x1Bɭ\0\0p;䀦os;䀧t;䀾t;䀼uot;䀢`.split(``).map(e=>e.charCodeAt(0))),Iu=new Map([[0,65533],[128,8364],[130,8218],[131,402],[132,8222],[133,8230],[134,8224],[135,8225],[136,710],[137,8240],[138,352],[139,8249],[140,338],[142,381],[145,8216],[146,8217],[147,8220],[148,8221],[149,8226],[150,8211],[151,8212],[152,732],[153,8482],[154,353],[155,8250],[156,339],[158,382],[159,376]]),Lu=String.fromCodePoint??function(e){let t=``;return e>65535&&(e-=65536,t+=String.fromCharCode(e>>>10&1023|55296),e=56320|e&1023),t+=String.fromCharCode(e),t};function Ru(e){return e>=55296&&e<=57343||e>1114111?65533:Iu.get(e)??e}var B;(function(e){e[e.NUM=35]=`NUM`,e[e.SEMI=59]=`SEMI`,e[e.EQUALS=61]=`EQUALS`,e[e.ZERO=48]=`ZERO`,e[e.NINE=57]=`NINE`,e[e.LOWER_A=97]=`LOWER_A`,e[e.LOWER_F=102]=`LOWER_F`,e[e.LOWER_X=120]=`LOWER_X`,e[e.LOWER_Z=122]=`LOWER_Z`,e[e.UPPER_A=65]=`UPPER_A`,e[e.UPPER_F=70]=`UPPER_F`,e[e.UPPER_Z=90]=`UPPER_Z`})(B||={});var zu=32,Bu;(function(e){e[e.VALUE_LENGTH=49152]=`VALUE_LENGTH`,e[e.BRANCH_LENGTH=16256]=`BRANCH_LENGTH`,e[e.JUMP_TABLE=127]=`JUMP_TABLE`})(Bu||={});function Vu(e){return e>=B.ZERO&&e<=B.NINE}function Hu(e){return e>=B.UPPER_A&&e<=B.UPPER_F||e>=B.LOWER_A&&e<=B.LOWER_F}function Uu(e){return e>=B.UPPER_A&&e<=B.UPPER_Z||e>=B.LOWER_A&&e<=B.LOWER_Z||Vu(e)}function Wu(e){return e===B.EQUALS||Uu(e)}var V;(function(e){e[e.EntityStart=0]=`EntityStart`,e[e.NumericStart=1]=`NumericStart`,e[e.NumericDecimal=2]=`NumericDecimal`,e[e.NumericHex=3]=`NumericHex`,e[e.NamedEntity=4]=`NamedEntity`})(V||={});var Gu;(function(e){e[e.Legacy=0]=`Legacy`,e[e.Strict=1]=`Strict`,e[e.Attribute=2]=`Attribute`})(Gu||={});var Ku=class{constructor(e,t,n){this.decodeTree=e,this.emitCodePoint=t,this.errors=n,this.state=V.EntityStart,this.consumed=1,this.result=0,this.treeIndex=0,this.excess=1,this.decodeMode=Gu.Strict}startEntity(e){this.decodeMode=e,this.state=V.EntityStart,this.result=0,this.treeIndex=0,this.excess=1,this.consumed=1}write(e,t){switch(this.state){case V.EntityStart:return e.charCodeAt(t)===B.NUM?(this.state=V.NumericStart,this.consumed+=1,this.stateNumericStart(e,t+1)):(this.state=V.NamedEntity,this.stateNamedEntity(e,t));case V.NumericStart:return this.stateNumericStart(e,t);case V.NumericDecimal:return this.stateNumericDecimal(e,t);case V.NumericHex:return this.stateNumericHex(e,t);case V.NamedEntity:return this.stateNamedEntity(e,t)}}stateNumericStart(e,t){return t>=e.length?-1:(e.charCodeAt(t)|zu)===B.LOWER_X?(this.state=V.NumericHex,this.consumed+=1,this.stateNumericHex(e,t+1)):(this.state=V.NumericDecimal,this.stateNumericDecimal(e,t))}addToNumericResult(e,t,n,r){if(t!==n){let i=n-t;this.result=this.result*r**+i+parseInt(e.substr(t,i),r),this.consumed+=i}}stateNumericHex(e,t){let n=t;for(;t<e.length;){let r=e.charCodeAt(t);if(Vu(r)||Hu(r))t+=1;else return this.addToNumericResult(e,n,t,16),this.emitNumericEntity(r,3)}return this.addToNumericResult(e,n,t,16),-1}stateNumericDecimal(e,t){let n=t;for(;t<e.length;){let r=e.charCodeAt(t);if(Vu(r))t+=1;else return this.addToNumericResult(e,n,t,10),this.emitNumericEntity(r,2)}return this.addToNumericResult(e,n,t,10),-1}emitNumericEntity(e,t){var n;if(this.consumed<=t)return(n=this.errors)==null||n.absenceOfDigitsInNumericCharacterReference(this.consumed),0;if(e===B.SEMI)this.consumed+=1;else if(this.decodeMode===Gu.Strict)return 0;return this.emitCodePoint(Ru(this.result),this.consumed),this.errors&&(e!==B.SEMI&&this.errors.missingSemicolonAfterCharacterReference(),this.errors.validateNumericCharacterReference(this.result)),this.consumed}stateNamedEntity(e,t){let{decodeTree:n}=this,r=n[this.treeIndex],i=(r&Bu.VALUE_LENGTH)>>14;for(;t<e.length;t++,this.excess++){let a=e.charCodeAt(t);if(this.treeIndex=Ju(n,r,this.treeIndex+Math.max(1,i),a),this.treeIndex<0)return this.result===0||this.decodeMode===Gu.Attribute&&(i===0||Wu(a))?0:this.emitNotTerminatedNamedEntity();if(r=n[this.treeIndex],i=(r&Bu.VALUE_LENGTH)>>14,i!==0){if(a===B.SEMI)return this.emitNamedEntityData(this.treeIndex,i,this.consumed+this.excess);this.decodeMode!==Gu.Strict&&(this.result=this.treeIndex,this.consumed+=this.excess,this.excess=0)}}return-1}emitNotTerminatedNamedEntity(){var e;let{result:t,decodeTree:n}=this,r=(n[t]&Bu.VALUE_LENGTH)>>14;return this.emitNamedEntityData(t,r,this.consumed),(e=this.errors)==null||e.missingSemicolonAfterCharacterReference(),this.consumed}emitNamedEntityData(e,t,n){let{decodeTree:r}=this;return this.emitCodePoint(t===1?r[e]&~Bu.VALUE_LENGTH:r[e+1],n),t===3&&this.emitCodePoint(r[e+2],n),n}end(){var e;switch(this.state){case V.NamedEntity:return this.result!==0&&(this.decodeMode!==Gu.Attribute||this.result===this.treeIndex)?this.emitNotTerminatedNamedEntity():0;case V.NumericDecimal:return this.emitNumericEntity(0,2);case V.NumericHex:return this.emitNumericEntity(0,3);case V.NumericStart:return(e=this.errors)==null||e.absenceOfDigitsInNumericCharacterReference(this.consumed),0;case V.EntityStart:return 0}}};function qu(e){let t=``,n=new Ku(e,e=>t+=Lu(e));return function(e,r){let i=0,a=0;for(;(a=e.indexOf(`&`,a))>=0;){t+=e.slice(i,a),n.startEntity(r);let o=n.write(e,a+1);if(o<0){i=a+n.end();break}i=a+o,a=o===0?i+1:i}let o=t+e.slice(i);return t=``,o}}function Ju(e,t,n,r){let i=(t&Bu.BRANCH_LENGTH)>>7,a=t&Bu.JUMP_TABLE;if(i===0)return a!==0&&r===a?n:-1;if(a){let t=r-a;return t<0||t>=i?-1:e[n+t]-1}let o=n,s=o+i-1;for(;o<=s;){let t=o+s>>>1,n=e[t];if(n<r)o=t+1;else if(n>r)s=t-1;else return e[t+i]}return-1}var Yu=qu(Pu);qu(Fu);function Xu(e,t=Gu.Legacy){return Yu(e,t)}function Zu(e){return Yu(e,Gu.Strict)}var Qu=t({arrayReplaceAt:()=>id,asciiTrim:()=>Ed,assign:()=>rd,escapeHtml:()=>_d,escapeRE:()=>yd,fromCodePoint:()=>od,has:()=>nd,isMdAsciiPunct:()=>Cd,isPunctChar:()=>xd,isPunctCharCode:()=>Sd,isSpace:()=>H,isString:()=>ed,isValidEntityCode:()=>ad,isWhiteSpace:()=>bd,lib:()=>Dd,normalizeReference:()=>wd,unescapeAll:()=>fd,unescapeMd:()=>dd});function $u(e){return Object.prototype.toString.call(e)}function ed(e){return $u(e)===`[object String]`}var td=Object.prototype.hasOwnProperty;function nd(e,t){return td.call(e,t)}function rd(e){return Array.prototype.slice.call(arguments,1).forEach(function(t){if(t){if(typeof t!=`object`)throw TypeError(t+`must be object`);Object.keys(t).forEach(function(n){e[n]=t[n]})}}),e}function id(e,t,n){return[].concat(e.slice(0,t),n,e.slice(t+1))}function ad(e){return!(e>=55296&&e<=57343||e>=64976&&e<=65007||(e&65535)==65535||(e&65535)==65534||e>=0&&e<=8||e===11||e>=14&&e<=31||e>=127&&e<=159||e>1114111)}function od(e){if(e>65535){e-=65536;let t=55296+(e>>10),n=56320+(e&1023);return String.fromCharCode(t,n)}return String.fromCharCode(e)}var sd=/\\([!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~])/g,cd=RegExp(sd.source+`|&([a-z#][a-z0-9]{1,31});`,`gi`),ld=/^#((?:x[a-f0-9]{1,8}|[0-9]{1,8}))$/i;function ud(e,t){if(t.charCodeAt(0)===35&&ld.test(t)){let n=t[1].toLowerCase()===`x`?parseInt(t.slice(2),16):parseInt(t.slice(1),10);return ad(n)?od(n):e}let n=Xu(e);return n===e?e:n}function dd(e){return e.indexOf(`\\`)<0?e:e.replace(sd,`$1`)}function fd(e){return e.indexOf(`\\`)<0&&e.indexOf(`&`)<0?e:e.replace(cd,function(e,t,n){return t||ud(e,n)})}var pd=/[&<>"]/,md=/[&<>"]/g,hd={"&":`&amp;`,"<":`&lt;`,">":`&gt;`,'"':`&quot;`};function gd(e){return hd[e]}function _d(e){return pd.test(e)?e.replace(md,gd):e}var vd=/[.?*+^$[\]\\(){}|-]/g;function yd(e){return e.replace(vd,`\\$&`)}function H(e){switch(e){case 9:case 32:return!0}return!1}function bd(e){if(e>=8192&&e<=8202)return!0;switch(e){case 9:case 10:case 11:case 12:case 13:case 32:case 160:case 5760:case 8239:case 8287:case 12288:return!0}return!1}function xd(e){return Au.test(e)||ju.test(e)}function Sd(e){return xd(od(e))}function Cd(e){switch(e){case 33:case 34:case 35:case 36:case 37:case 38:case 39:case 40:case 41:case 42:case 43:case 44:case 45:case 46:case 47:case 58:case 59:case 60:case 61:case 62:case 63:case 64:case 91:case 92:case 93:case 94:case 95:case 96:case 123:case 124:case 125:case 126:return!0;default:return!1}}function wd(e){return e=e.trim().replace(/\s+/g,` `),e.toLowerCase().toUpperCase()}function Td(e){return e===32||e===9||e===10||e===13}function Ed(e){let t=0;for(;t<e.length&&Td(e.charCodeAt(t));t++);let n=e.length-1;for(;n>=t&&Td(e.charCodeAt(n));n--);return e.slice(t,n+1)}var Dd={mdurl:Eu,ucmicro:Nu};function Od(e,t,n){let r,i,a,o,s=e.posMax,c=e.pos;for(e.pos=t+1,r=1;e.pos<s;){if(a=e.src.charCodeAt(e.pos),a===93&&(r--,r===0)){i=!0;break}if(o=e.pos,e.md.inline.skipToken(e),a===91){if(o===e.pos-1)r++;else if(n)return e.pos=c,-1}}let l=-1;return i&&(l=e.pos),e.pos=c,l}function kd(e,t,n){let r,i=t,a={ok:!1,pos:0,str:``};if(e.charCodeAt(i)===60){for(i++;i<n;){if(r=e.charCodeAt(i),r===10||r===60)return a;if(r===62)return a.pos=i+1,a.str=fd(e.slice(t+1,i)),a.ok=!0,a;if(r===92&&i+1<n){i+=2;continue}i++}return a}let o=0;for(;i<n&&(r=e.charCodeAt(i),!(r===32||r<32||r===127));){if(r===92&&i+1<n){if(e.charCodeAt(i+1)===32)break;i+=2;continue}if(r===40&&(o++,o>32))return a;if(r===41){if(o===0)break;o--}i++}return t===i||o!==0?a:(a.str=fd(e.slice(t,i)),a.pos=i,a.ok=!0,a)}function Ad(e,t,n,r){let i,a=t,o={ok:!1,can_continue:!1,pos:0,str:``,marker:0};if(r)o.str=r.str,o.marker=r.marker;else{if(a>=n)return o;let r=e.charCodeAt(a);if(r!==34&&r!==39&&r!==40)return o;t++,a++,r===40&&(r=41),o.marker=r}for(;a<n;){if(i=e.charCodeAt(a),i===o.marker)return o.pos=a+1,o.str+=fd(e.slice(t,a)),o.ok=!0,o;if(i===40&&o.marker===41)return o;i===92&&a+1<n&&a++,a++}return o.can_continue=!0,o.str+=fd(e.slice(t,a)),o}var jd=t({parseLinkDestination:()=>kd,parseLinkLabel:()=>Od,parseLinkTitle:()=>Ad}),Md={};Md.code_inline=function(e,t,n,r,i){let a=e[t];return`<code`+i.renderAttrs(a)+`>`+_d(a.content)+`</code>`},Md.code_block=function(e,t,n,r,i){let a=e[t];return`<pre`+i.renderAttrs(a)+`><code>`+_d(e[t].content)+`</code></pre>
 `},Md.fence=function(e,t,n,r,i){let a=e[t],o=a.info?fd(a.info).trim():``,s=``,c=``;if(o){let e=o.split(/(\s+)/g);s=e[0],c=e.slice(2).join(``)}let l;if(l=n.highlight&&n.highlight(a.content,s,c)||_d(a.content),l.indexOf(`<pre`)===0)return l+`
