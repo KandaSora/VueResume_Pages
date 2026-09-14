@@ -1,5 +1,6 @@
 {
   "title": "打砖块",
+  "cover": "cover.png",
   "description": "用新框架Ai自行处理，单元测试",
   "version": 1
 }
