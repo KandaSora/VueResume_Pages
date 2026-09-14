@@ -1,55 +1,55 @@
 {
     "FileVersion": 1,
     "PackageName": "DefaultPackage",
-    "PackageVersion": "2026-08-26-202324",
+    "PackageVersion": "2026-09-14-1160",
     "Entries": [
         {
+            "BundleGuid": "8e4e2222bf5337a981d4947c293b483a",
+            "FileName": "assets_gameres_art_audio_8e4e2222bf5337a981d4947c293b483a.bundle"
+        },
+        {
             "BundleGuid": "11df43dd18777dffb5ae09a55eab5c32",
-            "FileName": "11df43dd18777dffb5ae09a55eab5c32.bundle"
-        },
-        {
-            "BundleGuid": "21a4fbb5df0ee4ebec8012ab0deb4ffd",
-            "FileName": "21a4fbb5df0ee4ebec8012ab0deb4ffd.bundle"
-        },
-        {
-            "BundleGuid": "458c34d9db90668f6e167013ff6215c8",
-            "FileName": "458c34d9db90668f6e167013ff6215c8.bundle"
+            "FileName": "assets_gameres_art_fonts_11df43dd18777dffb5ae09a55eab5c32.bundle"
         },
         {
             "BundleGuid": "5f4d77c8abda445fcc845dffd4863d6a",
-            "FileName": "5f4d77c8abda445fcc845dffd4863d6a.bundle"
-        },
-        {
-            "BundleGuid": "6bfd1b3838ab7c8019ee06966a8c032a",
-            "FileName": "6bfd1b3838ab7c8019ee06966a8c032a.bundle"
-        },
-        {
-            "BundleGuid": "8e4e2222bf5337a981d4947c293b483a",
-            "FileName": "8e4e2222bf5337a981d4947c293b483a.bundle"
-        },
-        {
-            "BundleGuid": "9cbe2a0c25b38094eb36a961884ded69",
-            "FileName": "9cbe2a0c25b38094eb36a961884ded69.bundle"
+            "FileName": "assets_gameres_art_pixel_5f4d77c8abda445fcc845dffd4863d6a.bundle"
         },
         {
             "BundleGuid": "ad804904369e83d1bd673d1b9a36e7af",
-            "FileName": "ad804904369e83d1bd673d1b9a36e7af.bundle"
-        },
-        {
-            "BundleGuid": "b2318c0e9074a8e6610ba5a933b25629",
-            "FileName": "b2318c0e9074a8e6610ba5a933b25629.bundle"
-        },
-        {
-            "BundleGuid": "bfcabbbf04b3672b9959b18e17007789",
-            "FileName": "bfcabbbf04b3672b9959b18e17007789.bundle"
+            "FileName": "assets_gameres_art_pixel_atlas_ad804904369e83d1bd673d1b9a36e7af.bundle"
         },
         {
             "BundleGuid": "f58687f7977c75b2885e9c026a1f4e24",
-            "FileName": "f58687f7977c75b2885e9c026a1f4e24.bundle"
+            "FileName": "assets_gameres_art_pixel_background_f58687f7977c75b2885e9c026a1f4e24.bundle"
+        },
+        {
+            "BundleGuid": "458c34d9db90668f6e167013ff6215c8",
+            "FileName": "assets_gameres_art_pixel_ball_458c34d9db90668f6e167013ff6215c8.bundle"
+        },
+        {
+            "BundleGuid": "bfcabbbf04b3672b9959b18e17007789",
+            "FileName": "assets_gameres_art_pixel_brick_bfcabbbf04b3672b9959b18e17007789.bundle"
         },
         {
             "BundleGuid": "ffe0b38bc853e3bd53d4eae3cf753882",
-            "FileName": "ffe0b38bc853e3bd53d4eae3cf753882.bundle"
+            "FileName": "assets_gameres_art_pixel_character_ffe0b38bc853e3bd53d4eae3cf753882.bundle"
+        },
+        {
+            "BundleGuid": "6bfd1b3838ab7c8019ee06966a8c032a",
+            "FileName": "assets_gameres_art_pixel_item_6bfd1b3838ab7c8019ee06966a8c032a.bundle"
+        },
+        {
+            "BundleGuid": "b2318c0e9074a8e6610ba5a933b25629",
+            "FileName": "assets_gameres_art_ui_atlas_b2318c0e9074a8e6610ba5a933b25629.bundle"
+        },
+        {
+            "BundleGuid": "9cbe2a0c25b38094eb36a961884ded69",
+            "FileName": "assets_gameres_config_9cbe2a0c25b38094eb36a961884ded69.bundle"
+        },
+        {
+            "BundleGuid": "21a4fbb5df0ee4ebec8012ab0deb4ffd",
+            "FileName": "assets_gameres_prefabs_ui_21a4fbb5df0ee4ebec8012ab0deb4ffd.bundle"
         }
     ]
 }
