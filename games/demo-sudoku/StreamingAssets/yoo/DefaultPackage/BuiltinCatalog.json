@@ -1,0 +1,23 @@
+{
+    "FileVersion": 1,
+    "PackageName": "DefaultPackage",
+    "PackageVersion": "2026-09-18-32",
+    "Entries": [
+        {
+            "BundleGuid": "5addb301a615ce5b14d9a25c28a159c8",
+            "FileName": "assets_gameres_art_fonts_5addb301a615ce5b14d9a25c28a159c8.bundle"
+        },
+        {
+            "BundleGuid": "df225e5e44ba600fe36e0a62d7ebead4",
+            "FileName": "assets_gameres_audio_sfx_df225e5e44ba600fe36e0a62d7ebead4.bundle"
+        },
+        {
+            "BundleGuid": "824b1df4006bf3bcd0f9e529aec4ffac",
+            "FileName": "assets_gameres_audio_ui_824b1df4006bf3bcd0f9e529aec4ffac.bundle"
+        },
+        {
+            "BundleGuid": "98719f74018bb43d9f4f844dc8269002",
+            "FileName": "assets_gameres_prefabs_ui_98719f74018bb43d9f4f844dc8269002.bundle"
+        }
+    ]
+}
